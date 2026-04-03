@@ -50,7 +50,7 @@ services:
 
   mlflow:
     build:
-      context: .
+      context: ./training_scripts
       dockerfile: Dockerfile.mlflow
     ports:
       - "5000:5000"
