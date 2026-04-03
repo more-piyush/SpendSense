@@ -1,0 +1,18 @@
+# configs/explain.yaml
+# SHAP explainability configuration
+
+# Model source
+model_path: /data/models/xgboost_trend.json
+# production_run_id: <mlflow-run-id>
+
+# MLflow (fallback for model loading)
+mlflow_tracking_uri: http://CHAMELEON_FLOATING_IP:5000
+
+# Feature data
+features_path: /data/trend_features.parquet
+
+# Anomaly thresholds
+anomaly_threshold: 0.6
+
+# Output
+output_path: /data/anomaly_explanations.json

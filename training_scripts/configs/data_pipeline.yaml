@@ -1,0 +1,29 @@
+# configs/data_pipeline.yaml
+# CE Survey ETL pipeline configuration
+# Transforms BLS PUMD data into training-ready parquet files
+
+# Data source
+raw_data_dir: /data/raw
+force_download: false
+
+# Local paths (fallback if BLS download fails)
+# local_intrvw24_path: /data/raw/intrvw24.zip
+# local_hg_path: /data/raw/CE-HG-Integ-2024.txt
+
+# Step 1: Persona sampling
+n_personas: 750
+
+# Step 2: Transaction aggregation
+price_noise_low: 0.95
+price_noise_high: 1.10
+
+# Step 4: Merchant generation
+preferred_merchant_ratio: 0.7
+n_preferred_merchants: 3
+
+# Step 5: Quality thresholds
+min_multilabel_coverage: 2
+
+# Step 6: Output
+external_sample_weight: 0.5
+output_dir: /data

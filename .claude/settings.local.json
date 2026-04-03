@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -c \":*)",
+      "Bash(pandoc \"C:/Users/USER/Desktop/Academics/MLOPs/Project/Documentation/Firefly_III_Complete_Project_Documentation.docx\" -t markdown)",
+      "Bash(python scripts/office/unpack.py \"C:/Users/USER/Desktop/Academics/MLOPs/Project/Documentation/Firefly_III_Complete_Project_Documentation.docx\" \"C:/Users/USER/Desktop/Academics/MLOPs/Project/Documentation/unpacked_firefly/\")",
+      "Bash(python -c \"print\\(''hello''\\)\")",
+      "Bash(pandoc \"Documentation/Firefly_III_Complete_Project_Documentation.docx\" -t markdown)",
+      "Bash(python -c \":*)",
+      "Bash(pandoc \"C:/Users/USER/Desktop/Academics/MLOPs/Project/Documentation/Firefly_III_Complete_Project_Documentation.docx\" -t plain --wrap=none)"
+    ]
+  }
+}

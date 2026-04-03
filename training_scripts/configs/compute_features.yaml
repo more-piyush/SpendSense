@@ -1,0 +1,25 @@
+# configs/compute_features.yaml
+# Feature computation configuration for trend detection
+
+# Data source: "database" (Firefly III PostgreSQL) or "file" (CSV/Parquet)
+data_source: file
+data_path: /data/raw_transactions.parquet
+
+# Database connection (used when data_source=database)
+database:
+  host: localhost
+  port: 5432
+  dbname: firefly
+  user: firefly
+  password: ""
+
+# Candidate selection filters (Section 7.2)
+min_history_months: 3
+min_txn_per_month: 2
+outlier_threshold: 10
+
+# Budget loading
+load_budgets: false
+
+# Output
+output_path: /data/trend_features.parquet

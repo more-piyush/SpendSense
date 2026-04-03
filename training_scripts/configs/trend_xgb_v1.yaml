@@ -1,0 +1,33 @@
+# configs/trend_xgb_v1.yaml
+# XGBoost with standard hyperparameters + Isolation Forest ensemble
+# Purpose: Primary candidate — well-regularized gradient boosting.
+
+run_name: "trend_xgb_v1"
+model_type: xgboost
+
+# XGBoost hyperparameters
+objective: reg:squarederror
+n_estimators: 300
+max_depth: 6
+learning_rate: 0.05
+min_child_weight: 5
+subsample: 0.8
+colsample_bytree: 0.8
+reg_alpha: 0.1
+reg_lambda: 1.0
+gamma: 0.1
+verbose: 10
+
+# Isolation Forest ensemble
+train_isolation_forest: true
+iso_n_estimators: 100
+iso_contamination: 0.1
+iso_max_samples: 256
+xgb_ensemble_weight: 0.6
+
+# Data
+data_path: /data/trend_training.parquet
+
+# MLflow
+mlflow_tracking_uri: http://CHAMELEON_FLOATING_IP:5000
+experiment_name: trend_detection
