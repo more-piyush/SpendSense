@@ -53,10 +53,23 @@ services:
       context: ./training_scripts
       dockerfile: Dockerfile.mlflow
     ports:
-      - "5000:5000"
+      - "8000:8000"
     volumes:
       - mlflow_data:/mlflow-artifacts
       - mlflow_db:/app
+
+  # ──────────────────────────────────────────────
+  # DATA GENERATION (self-contained, no downloads)
+  # ──────────────────────────────────────────────
+
+  generate-data:
+    build:
+      context: ./training_scripts
+      dockerfile: Dockerfile
+    command: ["generate_training_data.py", "configs/generate_data.yaml"]
+    volumes:
+      - training_data:/data
+    profiles: ["pipeline"]
 
   # ──────────────────────────────────────────────
   # DATA PIPELINE
@@ -67,6 +80,9 @@ services:
       context: ./training_scripts
       dockerfile: Dockerfile
     command: ["data_pipeline.py", "configs/data_pipeline.yaml"]
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
     volumes:
       - training_data:/data
     profiles: ["pipeline"]

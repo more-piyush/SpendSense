@@ -1,0 +1,37 @@
+# configs/generate_data.yaml
+# Self-contained synthetic data generator configuration
+# No external downloads required — uses BLS CE Survey statistical distributions
+
+# ── Persona generation ──────────────────────────────────────
+n_personas: 750
+min_months: 12
+max_months: 24
+
+# ── Transaction noise ───────────────────────────────────────
+price_noise_low: 0.85
+price_noise_high: 1.15
+
+# ── Merchant generation ─────────────────────────────────────
+preferred_merchant_ratio: 0.7
+n_preferred_merchants: 3
+
+# ── Multi-label thresholds ──────────────────────────────────
+min_multilabel_coverage: 2
+
+# ── Output ──────────────────────────────────────────────────
+output_dir: /data
+cat_filename: categorization_training.parquet
+trend_filename: trend_training.parquet
+
+# ── Optional S3 upload ──────────────────────────────────────
+upload_to_s3: false
+s3:
+  endpoint_url: http://129.114.26.59:9000
+  bucket: training-data
+  access_key: null
+  secret_key: null
+  region: us-east-1
+
+# ── MLflow (for lineage tracking only) ──────────────────────
+mlflow_tracking_uri: http://CHAMELEON_FLOATING_IP:8000
+experiment_name: data-generation
