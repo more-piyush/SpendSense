@@ -27,7 +27,7 @@ reference_features_path: /data/reference_trend_features.parquet
 current_features_path: /data/current_trend_features.parquet
 
 # Promotion
-mlflow_tracking_uri: http://CHAMELEON_FLOATING_IP:5000
+mlflow_tracking_uri: http://CHAMELEON_FLOATING_IP:8000
 experiment_name: trend_retrain
 registry_path: /data/model_registry
 

@@ -31,7 +31,7 @@ def load_config(config_path: str) -> dict:
 
 def setup_mlflow(config: dict) -> str:
     """Configure MLflow tracking and start a run. Returns the run ID."""
-    tracking_uri = config.get("mlflow_tracking_uri", "http://localhost:5000")
+    tracking_uri = config.get("mlflow_tracking_uri", "http://localhost:8000")
     experiment_name = config.get("experiment_name", "default")
 
     mlflow.set_tracking_uri(tracking_uri)

@@ -1,29 +1,55 @@
 # configs/data_pipeline.yaml
 # CE Survey ETL pipeline configuration
-# Transforms BLS PUMD data into training-ready parquet files
+# Transforms BLS CE Survey data into training-ready parquet files
 
-# Data source
+# ── Data mode ────────────────────────────────────────────────
+# "preprocessed" = load pre-processed parquets from MinIO (your setup)
+# "raw"          = download raw PUMD zips from BLS
+# "auto"         = use preprocessed if s3.processed_prefix is set, else raw
+data_mode: preprocessed
+
+# ── Local cache directory ────────────────────────────────────
 raw_data_dir: /data/raw
 force_download: false
 
-# Local paths (fallback if BLS download fails)
-# local_intrvw24_path: /data/raw/intrvw24.zip
-# local_hg_path: /data/raw/CE-HG-Integ-2024.txt
+# ── S3 / MinIO object storage ────────────────────────────────
+s3:
+  endpoint_url: http://129.114.26.59:9000       # MinIO API port (NOT 9001 console)
+  bucket: processed-data                         # Bucket containing your BLS parquets
+  access_key: null                               # Set via AWS_ACCESS_KEY_ID env var
+  secret_key: null                               # Set via AWS_SECRET_ACCESS_KEY env var
+  region: us-east-1
 
-# Step 1: Persona sampling
+  # Path to pre-processed parquets in MinIO
+  # These are: bls_2020_*.parquet, bls_2021_*.parquet, ... bls_2024_*.parquet
+  processed_prefix: bls_ce_survey/processed/
+
+  # HG file (hierarchical groupings) — optional, in raw-data bucket or same bucket
+  hg_key: raw/CE-HG-Integ-2024.txt
+
+# ── Output S3 bucket (for training-ready parquets) ───────────
+output_s3:
+  bucket: training-data                          # Your training-data bucket
+  cat_key: categorization_training.parquet
+  trend_key: trend_training.parquet
+  report_key: pipeline_report.json
+
+upload_outputs: true
+
+# ── Step 1: Persona sampling ────────────────────────────────
 n_personas: 750
 
-# Step 2: Transaction aggregation
+# ── Step 2: Transaction aggregation ─────────────────────────
 price_noise_low: 0.95
 price_noise_high: 1.10
 
-# Step 4: Merchant generation
+# ── Step 4: Merchant generation ─────────────────────────────
 preferred_merchant_ratio: 0.7
 n_preferred_merchants: 3
 
-# Step 5: Quality thresholds
+# ── Step 5: Quality thresholds ──────────────────────────────
 min_multilabel_coverage: 2
 
-# Step 6: Output
+# ── Step 6: Output ──────────────────────────────────────────
 external_sample_weight: 0.5
 output_dir: /data
