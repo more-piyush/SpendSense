@@ -21,7 +21,7 @@ services:
       POSTGRES_PASSWORD: firefly_password
       POSTGRES_DB: firefly
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - /mnt/mlflow_persist/postgres_data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
     healthcheck:
@@ -44,7 +44,7 @@ services:
       DB_USERNAME: firefly
       DB_PASSWORD: firefly_password
     volumes:
-      - firefly_upload:/var/www/html/storage/upload
+      - /mnt/mlflow_persist/firefly_upload:/var/www/html/storage/upload
     ports:
       - "8080:8080"
 
@@ -55,8 +55,8 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - mlflow_data:/mlflow-artifacts
-      - mlflow_db:/app
+      - /mnt/mlflow_persist/mlflow_artifacts:/mlflow-artifacts
+      - /mnt/mlflow_persist/mlflow_db:/app
 
   # ──────────────────────────────────────────────
   # DATA GENERATION (self-contained, no downloads)
@@ -253,8 +253,4 @@ services:
     profiles: ["ops"]
 
 volumes:
-  postgres_data:
-  firefly_upload:
-  mlflow_data:
-  mlflow_db:
   training_data:
