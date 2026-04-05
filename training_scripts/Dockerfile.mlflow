@@ -1,5 +1,5 @@
-# training/Dockerfile.mlflow
-# MLflow tracking server for experiment management
+# training_scripts/Dockerfile.mlflow
+# MLflow tracking server backed by PostgreSQL
 # Must be accessible via public URL through April 7
 
 FROM python:3.10-slim
@@ -11,10 +11,10 @@ RUN pip install --no-cache-dir \
 
 WORKDIR /app
 
-EXPOSE 5000
+EXPOSE 8000
 
 CMD ["mlflow", "server", \
      "--host", "0.0.0.0", \
-     "--port", "5000", \
-     "--backend-store-uri", "sqlite:///mlflow.db", \
-     "--default-artifact-root", "/mlflow-artifacts"]
+     "--port", "8000", \
+     "--backend-store-uri", "postgresql://user:password@postgres:5432/mlflowdb", \
+     "--default-artifact-root", "file:///mlflow-artifacts"]
