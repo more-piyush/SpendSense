@@ -346,12 +346,12 @@ def evaluate_regression(model, X_val, y_val, X_test, y_test, prefix):
     test_preds = model.predict(X_test)
 
     metrics = {
-        f"{prefix}_val_rmse": round(np.sqrt(mean_squared_error(y_val, val_preds)), 4),
-        f"{prefix}_val_mae": round(mean_absolute_error(y_val, val_preds), 4),
-        f"{prefix}_val_r2": round(r2_score(y_val, val_preds), 4),
-        f"{prefix}_test_rmse": round(np.sqrt(mean_squared_error(y_test, test_preds)), 4),
-        f"{prefix}_test_mae": round(mean_absolute_error(y_test, test_preds), 4),
-        f"{prefix}_test_r2": round(r2_score(y_test, test_preds), 4),
+        f"{prefix}_val_rmse": float(round(np.sqrt(mean_squared_error(y_val, val_preds)), 4)),
+        f"{prefix}_val_mae": float(round(mean_absolute_error(y_val, val_preds), 4)),
+        f"{prefix}_val_r2": float(round(r2_score(y_val, val_preds), 4)),
+        f"{prefix}_test_rmse": float(round(np.sqrt(mean_squared_error(y_test, test_preds)), 4)),
+        f"{prefix}_test_mae": float(round(mean_absolute_error(y_test, test_preds), 4)),
+        f"{prefix}_test_r2": float(round(r2_score(y_test, test_preds), 4)),
     }
 
     # Anomaly detection quality (simulated)
@@ -362,7 +362,7 @@ def evaluate_regression(model, X_val, y_val, X_test, y_test, prefix):
     threshold = y_test.std() * 2
     true_anomalies = test_residuals > threshold
     precision_at_5 = true_anomalies[top5_indices].mean()
-    metrics[f"{prefix}_precision_at_5"] = round(precision_at_5, 4)
+    metrics[f"{prefix}_precision_at_5"] = float(round(precision_at_5, 4))
 
     mlflow.log_metrics(metrics)
     log_peak_memory()
