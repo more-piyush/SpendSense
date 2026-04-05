@@ -129,6 +129,30 @@ services:
     profiles: ["train"]
     # No GPU reservation — runs on CPU
 
+  train-cat-distilbert-m1medium-v1:
+    build:
+      context: ./training_scripts
+      dockerfile: Dockerfile
+    command: ["train_categorization.py", "configs/cat_distilbert_m1medium_v1.yaml"]
+    volumes:
+      - training_data:/data
+      - ./training_scripts/configs:/app/configs
+    depends_on:
+      - mlflow
+    profiles: ["train"]
+
+  train-cat-distilbert-m1medium-v2:
+    build:
+      context: ./training_scripts
+      dockerfile: Dockerfile
+    command: ["train_categorization.py", "configs/cat_distilbert_m1medium_v2.yaml"]
+    volumes:
+      - training_data:/data
+      - ./training_scripts/configs:/app/configs
+    depends_on:
+      - mlflow
+    profiles: ["train"]
+
   train-cat-distilbert-base:
     build:
       context: ./training_scripts
