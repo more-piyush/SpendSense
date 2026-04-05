@@ -136,11 +136,18 @@ class DistilBertCategorizer(nn.Module):
     """
 
     def __init__(self, pretrained_model, n_classes, n_currencies=20,
-                 n_countries=50, dropout=0.3, freeze_layers=0):
+                 n_countries=50, dropout=0.3, freeze_layers=0,
+                 freeze_embeddings=False):
         super().__init__()
         self.bert = DistilBertModel.from_pretrained(pretrained_model)
 
-        # Freeze early layers if specified
+        # Freeze embeddings (major param reduction — ~23M params)
+        if freeze_embeddings:
+            for param in self.bert.embeddings.parameters():
+                param.requires_grad = False
+            print(f"[INFO] Froze embedding layer (~23M params)")
+
+        # Freeze early transformer layers if specified
         if freeze_layers > 0:
             for i, layer in enumerate(self.bert.transformer.layer):
                 if i < freeze_layers:
@@ -191,8 +198,11 @@ def train_one_epoch(model, dataloader, optimizer, scheduler, criterion,
     model.train()
     total_loss = 0
     n_batches = 0
+    total_batches = len(dataloader)
+    log_every = max(1, total_batches // 50)  # ~50 progress prints per epoch
+    epoch_start = time.time()
 
-    for batch in dataloader:
+    for batch_idx, batch in enumerate(dataloader):
         optimizer.zero_grad()
 
         input_ids = batch["input_ids"].to(device)
@@ -227,6 +237,15 @@ def train_one_epoch(model, dataloader, optimizer, scheduler, criterion,
         scheduler.step()
         total_loss += loss.item()
         n_batches += 1
+
+        if (batch_idx + 1) % log_every == 0 or batch_idx == 0:
+            elapsed = time.time() - epoch_start
+            rate = (batch_idx + 1) / max(elapsed, 0.001)
+            eta = (total_batches - batch_idx - 1) / max(rate, 0.001)
+            print(f"  step {batch_idx+1}/{total_batches} "
+                  f"loss={loss.item():.4f} "
+                  f"rate={rate:.1f} it/s "
+                  f"eta={eta/60:.1f}min", flush=True)
 
     return total_loss / max(n_batches, 1)
 
@@ -413,6 +432,7 @@ def train_distilbert(config, train_df, val_df, test_df, label_binarizer,
         n_classes=n_classes,
         dropout=config.get("dropout", 0.3),
         freeze_layers=config.get("freeze_layers", 0),
+        freeze_embeddings=config.get("freeze_embeddings", False),
     ).to(device)
 
     total_params = sum(p.numel() for p in model.parameters())

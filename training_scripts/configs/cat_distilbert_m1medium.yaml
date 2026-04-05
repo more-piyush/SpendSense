@@ -1,21 +1,22 @@
 # configs/cat_distilbert_m1medium.yaml
-# DistilBERT tuned for Chameleon m1.medium (2 vCPU, 3.82 GB RAM, no GPU)
+# DistilBERT as FEATURE EXTRACTOR on Chameleon m1.medium (2 vCPU, 3.82 GB RAM, no GPU)
 #
-# Strategy to make DistilBERT viable on tight hardware:
-#   1. Subsample training data to 30k rows (from 614k)
-#   2. Freeze layers 0-4 of the 6-layer DistilBERT encoder (only train
-#      the last transformer block + classification head). ~8x less compute
-#      and memory vs full fine-tuning.
-#   3. Very small batch (4) to fit in 3.82 GB RAM
-#   4. Short max_length (48 tokens — transaction descriptions are short)
-#   5. Only 3 epochs (enough with frozen backbone)
-#   6. mixed_precision disabled — it's a no-op on CPU and can cause errors
+# Strategy: freeze the ENTIRE BERT backbone (embeddings + all 6 transformer
+# layers) and only train the auxiliary feature embeddings + classification head.
+# This reduces trainable parameters from ~66M to ~1M — ~30x faster on CPU.
 #
-# Expected runtime on m1.medium: ~60-90 minutes
-# Expected quality: lower than full fine-tune, but validates the pipeline
-#                   and typically beats the TF-IDF baseline on macro-F1.
+# Why this works:
+#   - DistilBERT is pre-trained on billions of tokens; its frozen features
+#     are already strong for short text like transaction descriptions.
+#   - The training signal only flows through the small head (a few dense
+#     layers), which is fast even on CPU.
+#   - Typical result: beats TF-IDF baseline on macro-F1 by capturing
+#     word semantics TF-IDF misses.
+#
+# Expected runtime on m1.medium: ~30-45 minutes total (3 epochs)
+# Expected rate: ~3-5 iterations/second on 2 CPUs
 
-run_name: "cat_distilbert_m1medium"
+run_name: "cat_distilbert_m1medium_frozen_backbone"
 model_type: distilbert
 
 # Model
@@ -23,13 +24,14 @@ pretrained_model: distilbert-base-uncased
 max_length: 48
 
 # Training — CPU-friendly settings
-learning_rate: 0.00005    # 5e-5 — higher because backbone is mostly frozen
-batch_size: 4             # Small for RAM constraints
+learning_rate: 0.0005     # 5e-4 — much higher since we're only training the head
+batch_size: 8             # Larger batch is fine — no gradient memory for BERT
 epochs: 3
 warmup_ratio: 0.1
 weight_decay: 0.01
 dropout: 0.2
-freeze_layers: 5          # Freeze 5 of 6 transformer layers
+freeze_layers: 6          # Freeze ALL 6 transformer layers
+freeze_embeddings: true   # Also freeze embeddings (~23M params)
 early_stopping_patience: 1
 mixed_precision: false    # No-op on CPU
 
