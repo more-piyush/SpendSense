@@ -1,0 +1,45 @@
+# configs/cat_distilbert_m1medium.yaml
+# DistilBERT tuned for Chameleon m1.medium (2 vCPU, 3.82 GB RAM, no GPU)
+#
+# Strategy to make DistilBERT viable on tight hardware:
+#   1. Subsample training data to 30k rows (from 614k)
+#   2. Freeze layers 0-4 of the 6-layer DistilBERT encoder (only train
+#      the last transformer block + classification head). ~8x less compute
+#      and memory vs full fine-tuning.
+#   3. Very small batch (4) to fit in 3.82 GB RAM
+#   4. Short max_length (48 tokens — transaction descriptions are short)
+#   5. Only 3 epochs (enough with frozen backbone)
+#   6. mixed_precision disabled — it's a no-op on CPU and can cause errors
+#
+# Expected runtime on m1.medium: ~60-90 minutes
+# Expected quality: lower than full fine-tune, but validates the pipeline
+#                   and typically beats the TF-IDF baseline on macro-F1.
+
+run_name: "cat_distilbert_m1medium"
+model_type: distilbert
+
+# Model
+pretrained_model: distilbert-base-uncased
+max_length: 48
+
+# Training — CPU-friendly settings
+learning_rate: 0.00005    # 5e-5 — higher because backbone is mostly frozen
+batch_size: 4             # Small for RAM constraints
+epochs: 3
+warmup_ratio: 0.1
+weight_decay: 0.01
+dropout: 0.2
+freeze_layers: 5          # Freeze 5 of 6 transformer layers
+early_stopping_patience: 1
+mixed_precision: false    # No-op on CPU
+
+# Loss
+loss: bce_with_logits
+
+# Data
+data_path: /data/categorization_training.parquet
+max_samples: 30000        # Subsample train set; val/test auto-scaled to ~3750 each
+
+# MLflow
+mlflow_tracking_uri: http://mlflow:8000
+experiment_name: categorization

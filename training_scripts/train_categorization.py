@@ -584,6 +584,21 @@ def load_data(config):
         val_df = val_df.reset_index(drop=True)
         test_df = test_df.reset_index(drop=True)
 
+    # Optional subsampling for low-resource training (e.g., CPU-only VMs)
+    max_samples = config.get("max_samples")
+    if max_samples:
+        max_samples = int(max_samples)
+        val_cap = max(1000, max_samples // 8)
+        test_cap = max(1000, max_samples // 8)
+        if len(train_df) > max_samples:
+            train_df = train_df.sample(n=max_samples, random_state=42).reset_index(drop=True)
+        if len(val_df) > val_cap:
+            val_df = val_df.sample(n=val_cap, random_state=42).reset_index(drop=True)
+        if len(test_df) > test_cap:
+            test_df = test_df.sample(n=test_cap, random_state=42).reset_index(drop=True)
+        print(f"[INFO] Subsampled to max_samples={max_samples}")
+        mlflow.log_param("max_samples", max_samples)
+
     mlflow.log_params({
         "train_size": len(train_df),
         "val_size": len(val_df),
