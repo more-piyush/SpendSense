@@ -7,8 +7,6 @@
 #   docker compose run --rm train-categorization    # Train categorization model
 #   docker compose run --rm train-trend             # Train trend detection model
 
-version: "3.8"
-
 services:
   # ──────────────────────────────────────────────
   # INFRASTRUCTURE
@@ -69,6 +67,7 @@ services:
     command: ["generate_training_data.py", "configs/generate_data.yaml"]
     volumes:
       - training_data:/data
+      - ./training_scripts/configs:/app/configs
     profiles: ["pipeline"]
 
   # ──────────────────────────────────────────────
@@ -85,6 +84,7 @@ services:
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
     volumes:
       - training_data:/data
+      - ./training_scripts/configs:/app/configs
     profiles: ["pipeline"]
 
   compute-features:
@@ -94,6 +94,7 @@ services:
     command: ["compute_features.py", "configs/compute_features.yaml"]
     volumes:
       - training_data:/data
+      - ./training_scripts/configs:/app/configs
     depends_on:
       postgres:
         condition: service_healthy
@@ -110,6 +111,7 @@ services:
     command: ["train_categorization.py", "configs/cat_baseline_lr.yaml"]
     volumes:
       - training_data:/data
+      - ./training_scripts/configs:/app/configs
     depends_on:
       - mlflow
     profiles: ["train"]
@@ -121,6 +123,7 @@ services:
     command: ["train_categorization.py", "configs/cat_distilbert_base.yaml"]
     volumes:
       - training_data:/data
+      - ./training_scripts/configs:/app/configs
     depends_on:
       - mlflow
     deploy:
@@ -139,6 +142,7 @@ services:
     command: ["train_categorization.py", "configs/cat_distilbert_v1.yaml"]
     volumes:
       - training_data:/data
+      - ./training_scripts/configs:/app/configs
     depends_on:
       - mlflow
     deploy:
@@ -157,6 +161,7 @@ services:
     command: ["train_categorization.py", "configs/cat_distilbert_v2.yaml"]
     volumes:
       - training_data:/data
+      - ./training_scripts/configs:/app/configs
     depends_on:
       - mlflow
     deploy:
@@ -175,6 +180,7 @@ services:
     command: ["train_trend_detection.py", "configs/trend_rf_baseline.yaml"]
     volumes:
       - training_data:/data
+      - ./training_scripts/configs:/app/configs
     depends_on:
       - mlflow
     profiles: ["train"]
@@ -186,6 +192,7 @@ services:
     command: ["train_trend_detection.py", "configs/trend_xgb_v1.yaml"]
     volumes:
       - training_data:/data
+      - ./training_scripts/configs:/app/configs
     depends_on:
       - mlflow
     profiles: ["train"]
@@ -197,6 +204,7 @@ services:
     command: ["train_trend_detection.py", "configs/trend_xgb_optuna.yaml"]
     volumes:
       - training_data:/data
+      - ./training_scripts/configs:/app/configs
     depends_on:
       - mlflow
     profiles: ["train"]
@@ -213,6 +221,7 @@ services:
     command: ["configs/promote.yaml", "--run-id", "${RUN_ID}", "--action", "evaluate"]
     volumes:
       - training_data:/data
+      - ./training_scripts/configs:/app/configs
     depends_on:
       - mlflow
     profiles: ["ops"]
@@ -224,6 +233,7 @@ services:
     command: ["retrain.py", "configs/retrain_categorization.yaml"]
     volumes:
       - training_data:/data
+      - ./training_scripts/configs:/app/configs
     depends_on:
       - mlflow
     profiles: ["ops"]
@@ -235,6 +245,7 @@ services:
     command: ["retrain.py", "configs/retrain_trend.yaml"]
     volumes:
       - training_data:/data
+      - ./training_scripts/configs:/app/configs
     depends_on:
       - mlflow
     profiles: ["ops"]
@@ -250,6 +261,7 @@ services:
     command: ["explain.py", "configs/explain.yaml", "--all-users"]
     volumes:
       - training_data:/data
+      - ./training_scripts/configs:/app/configs
     profiles: ["ops"]
 
 volumes:
