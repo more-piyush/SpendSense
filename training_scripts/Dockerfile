@@ -28,7 +28,8 @@ RUN pip install --no-cache-dir \
     psutil==5.9.7 \
     matplotlib==3.8.2 \
     psycopg2-binary==2.9.9 \
-    requests==2.31.0
+    requests==2.31.0 \
+    boto3==1.34.0
 
 # Copy training scripts and configs
 COPY train_categorization.py .
