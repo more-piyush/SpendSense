@@ -30,6 +30,9 @@ from sklearn.metrics import (
     mean_absolute_error,
     r2_score,
 )
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 import mlflow
 import mlflow.xgboost
 import mlflow.sklearn
@@ -156,6 +159,21 @@ def train_random_forest(config, X_train, y_train, X_val, y_val, X_test, y_test):
     print(f"[INFO] Top 5 features: {[f'{k}: {v:.4f}' for k, v in top_features]}")
 
     mlflow.sklearn.log_model(model, "model")
+
+    # --- Rich Artifacts ---
+    # Feature importance bar chart
+    fig_feat, ax_feat = plt.subplots(figsize=(10, 8))
+    sorted_imp = sorted(importances.items(), key=lambda x: x[1])
+    ax_feat.barh([x[0] for x in sorted_imp], [x[1] for x in sorted_imp], color="forestgreen")
+    ax_feat.set_xlabel("Feature Importance (Gini)")
+    ax_feat.set_title("Random Forest Feature Importance")
+    fig_feat.tight_layout()
+    mlflow.log_figure(fig_feat, "feature_importance.png")
+    plt.close(fig_feat)
+
+    # Predicted vs Actual scatter
+    _log_pred_vs_actual(model, X_test, y_test, "rf")
+
     return metrics
 
 
@@ -210,6 +228,20 @@ def train_xgboost(config, X_train, y_train, X_val, y_val, X_test, y_test):
     print(f"[INFO] Top 5 features: {[f'{k}: {v:.1f}' for k, v in top_features]}")
 
     mlflow.xgboost.log_model(model, "model")
+
+    # --- Rich Artifacts ---
+    # Feature importance bar chart (gain-based)
+    fig_feat, ax_feat = plt.subplots(figsize=(10, 8))
+    sorted_imp = sorted(feature_imp.items(), key=lambda x: x[1])
+    ax_feat.barh([x[0] for x in sorted_imp], [x[1] for x in sorted_imp], color="darkorange")
+    ax_feat.set_xlabel("Feature Importance (Gain)")
+    ax_feat.set_title("XGBoost Feature Importance")
+    fig_feat.tight_layout()
+    mlflow.log_figure(fig_feat, "feature_importance.png")
+    plt.close(fig_feat)
+
+    # Predicted vs Actual scatter
+    _log_pred_vs_actual(model, X_test, y_test, "xgb")
 
     # Also train Isolation Forest ensemble member
     if config.get("train_isolation_forest", True):
@@ -330,11 +362,88 @@ def train_xgboost_optuna(config, X_train, y_train, X_val, y_val, X_test, y_test)
     metrics = evaluate_regression(best_model, X_val, y_val, X_test, y_test, "xgb_optuna")
     mlflow.xgboost.log_model(best_model, "model")
 
+    # --- Rich Artifacts ---
+    # Optuna optimization history
+    fig_optuna, ax_optuna = plt.subplots(figsize=(10, 6))
+    trials = study.trials
+    trial_nums = [t.number for t in trials]
+    trial_vals = [t.value for t in trials]
+    ax_optuna.plot(trial_nums, trial_vals, "o-", alpha=0.5, markersize=4, color="purple")
+    ax_optuna.axhline(study.best_value, color="red", linestyle="--", label=f"Best RMSE: {study.best_value:.4f}")
+    ax_optuna.set_xlabel("Trial")
+    ax_optuna.set_ylabel("RMSE")
+    ax_optuna.set_title("Optuna Optimization History")
+    ax_optuna.legend()
+    fig_optuna.tight_layout()
+    mlflow.log_figure(fig_optuna, "optuna_history.png")
+    plt.close(fig_optuna)
+
+    # Predicted vs Actual scatter
+    _log_pred_vs_actual(best_model, X_test, y_test, "xgb_optuna")
+
+    # Best params as artifact
+    mlflow.log_text(json.dumps(best_params, indent=2, default=str), "best_hyperparameters.json")
+
     # Train Isolation Forest with best model
     if config.get("train_isolation_forest", True):
         train_isolation_forest(config, X_train, X_test, y_test, best_model)
 
     return metrics
+
+
+# ============================================================
+# ARTIFACT HELPERS
+# ============================================================
+def _log_pred_vs_actual(model, X_test, y_test, prefix):
+    """Log predicted vs actual scatter plot."""
+    test_preds = model.predict(X_test)
+    fig, ax = plt.subplots(figsize=(8, 8))
+    ax.scatter(y_test, test_preds, alpha=0.3, s=10, color="steelblue")
+    min_val = min(y_test.min(), test_preds.min())
+    max_val = max(y_test.max(), test_preds.max())
+    ax.plot([min_val, max_val], [min_val, max_val], "r--", lw=2, label="Perfect prediction")
+    ax.set_xlabel("Actual Spend")
+    ax.set_ylabel("Predicted Spend")
+    ax.set_title(f"{prefix.upper()} — Predicted vs Actual (Test Set)")
+    ax.legend()
+    fig.tight_layout()
+    mlflow.log_figure(fig, "predicted_vs_actual.png")
+    plt.close(fig)
+
+    # Residual distribution
+    residuals = y_test - test_preds
+    fig_res, ax_res = plt.subplots(figsize=(10, 6))
+    ax_res.hist(residuals, bins=50, color="salmon", edgecolor="black", alpha=0.7)
+    ax_res.axvline(0, color="black", linestyle="--", lw=1.5)
+    ax_res.set_xlabel("Residual (Actual - Predicted)")
+    ax_res.set_ylabel("Count")
+    ax_res.set_title(f"{prefix.upper()} — Residual Distribution (Test Set)")
+    fig_res.tight_layout()
+    mlflow.log_figure(fig_res, "residual_distribution.png")
+    plt.close(fig_res)
+
+    # Sample predictions CSV
+    sample_size = min(50, len(y_test))
+    idx = np.random.RandomState(42).choice(len(y_test), sample_size, replace=False)
+    sample_df = pd.DataFrame({
+        "actual": y_test[idx],
+        "predicted": np.round(test_preds[idx], 2),
+        "residual": np.round(y_test[idx] - test_preds[idx], 2),
+        "abs_error_pct": np.round(np.abs(y_test[idx] - test_preds[idx]) / (np.abs(y_test[idx]) + 1e-8) * 100, 1),
+    })
+    mlflow.log_text(sample_df.to_csv(index=False), "sample_predictions.csv")
+
+    # Data stats
+    data_stats = {
+        "test_size": len(y_test),
+        "actual_mean": float(round(y_test.mean(), 2)),
+        "actual_std": float(round(y_test.std(), 2)),
+        "pred_mean": float(round(test_preds.mean(), 2)),
+        "pred_std": float(round(test_preds.std(), 2)),
+        "residual_mean": float(round(residuals.mean(), 2)),
+        "residual_std": float(round(residuals.std(), 2)),
+    }
+    mlflow.log_text(json.dumps(data_stats, indent=2), "data_stats.json")
 
 
 # ============================================================

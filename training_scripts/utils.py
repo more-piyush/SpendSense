@@ -36,6 +36,7 @@ def setup_mlflow(config: dict) -> str:
 
     mlflow.set_tracking_uri(tracking_uri)
     mlflow.set_experiment(experiment_name)
+    mlflow.enable_system_metrics_logging()
     print(f"[INFO] MLflow tracking URI: {tracking_uri}")
     print(f"[INFO] MLflow experiment: {experiment_name}")
     return tracking_uri

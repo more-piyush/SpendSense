@@ -39,6 +39,9 @@ from sklearn.metrics import (
     precision_recall_fscore_support,
     classification_report,
 )
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 import mlflow
 import mlflow.pytorch
 import mlflow.sklearn
@@ -380,6 +383,81 @@ def train_baseline(config, train_df, val_df, test_df, label_binarizer):
     mlflow.sklearn.log_model(clf, "model")
     mlflow.log_artifact(config["_config_path"])
 
+    # --- Rich Artifacts ---
+
+    # 1. Classification report (text)
+    report = classification_report(y_test, test_preds, zero_division=0)
+    mlflow.log_text(report, "classification_report.txt")
+
+    # 2. Confusion matrix (image)
+    from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
+    classes = clf.classes_
+    n_show = min(20, len(classes))  # Limit to 20 classes for readability
+    cm = confusion_matrix(y_test, test_preds, labels=classes[:n_show])
+    fig_cm, ax_cm = plt.subplots(figsize=(max(10, n_show), max(8, n_show * 0.8)))
+    ConfusionMatrixDisplay(cm, display_labels=classes[:n_show]).plot(
+        ax=ax_cm, cmap="Blues", xticks_rotation=45, values_format="d"
+    )
+    ax_cm.set_title("Confusion Matrix (Test Set)")
+    fig_cm.tight_layout()
+    mlflow.log_figure(fig_cm, "confusion_matrix.png")
+    plt.close(fig_cm)
+
+    # 3. Per-class F1 bar chart
+    per_class_report = classification_report(y_test, test_preds, output_dict=True, zero_division=0)
+    class_names = [k for k in per_class_report if k not in ("accuracy", "macro avg", "weighted avg")]
+    f1_scores = [per_class_report[c]["f1-score"] for c in class_names]
+    sorted_idx = np.argsort(f1_scores)
+    fig_f1, ax_f1 = plt.subplots(figsize=(10, max(6, len(class_names) * 0.3)))
+    ax_f1.barh([class_names[i] for i in sorted_idx], [f1_scores[i] for i in sorted_idx], color="steelblue")
+    ax_f1.set_xlabel("F1 Score")
+    ax_f1.set_title("Per-Class F1 Score (Test Set)")
+    ax_f1.set_xlim(0, 1.05)
+    fig_f1.tight_layout()
+    mlflow.log_figure(fig_f1, "per_class_f1.png")
+    plt.close(fig_f1)
+
+    # 4. Data stats (JSON)
+    class_dist = y_train.value_counts().to_dict()
+    data_stats = {
+        "train_size": len(y_train),
+        "val_size": len(y_val),
+        "test_size": len(y_test),
+        "n_classes": len(clf.classes_),
+        "class_distribution": {str(k): int(v) for k, v in class_dist.items()},
+    }
+    mlflow.log_text(json.dumps(data_stats, indent=2), "data_stats.json")
+
+    # 5. Sample predictions (CSV) — 50 random test samples
+    sample_idx = np.random.RandomState(42).choice(len(y_test), min(50, len(y_test)), replace=False)
+    sample_df = pd.DataFrame({
+        "description": test_df["description"].iloc[sample_idx].values,
+        "true_label": y_test.iloc[sample_idx].values,
+        "predicted_label": test_preds[sample_idx],
+        "correct": (y_test.iloc[sample_idx].values == test_preds[sample_idx]),
+    })
+    sample_csv = sample_df.to_csv(index=False)
+    mlflow.log_text(sample_csv, "sample_predictions.csv")
+
+    # 6. Feature importance (TF-IDF top features)
+    feature_names = tfidf.get_feature_names_out()
+    # Average absolute coefficient across all classes
+    if hasattr(clf, 'coef_'):
+        avg_importance = np.abs(clf.coef_).mean(axis=0)
+        top_n = 30
+        top_idx = np.argsort(avg_importance)[-top_n:]
+        fig_feat, ax_feat = plt.subplots(figsize=(10, 8))
+        ax_feat.barh(
+            [feature_names[i] for i in top_idx],
+            avg_importance[top_idx],
+            color="coral"
+        )
+        ax_feat.set_xlabel("Mean |Coefficient|")
+        ax_feat.set_title("Top 30 TF-IDF Features by Importance")
+        fig_feat.tight_layout()
+        mlflow.log_figure(fig_feat, "feature_importance.png")
+        plt.close(fig_feat)
+
     print(f"\n[RESULTS] Baseline metrics: {json.dumps(metrics, indent=2)}")
     return metrics
 
@@ -544,6 +622,112 @@ def train_distilbert(config, train_df, val_df, test_df, label_binarizer,
 
     # Log peak memory
     log_peak_memory()
+
+    # --- Rich Artifacts ---
+
+    # 1. Training loss curve
+    # Collect loss history by re-reading logged metrics
+    fig_loss, ax_loss = plt.subplots(figsize=(10, 6))
+    epochs_range = list(range(1, best_epoch + 2))
+    # We logged train_loss per epoch via mlflow, reconstruct from the run
+    # For simplicity, just note the final metrics; the step-logged metrics
+    # are visible in the MLflow UI charts.
+    ax_loss.set_xlabel("Epoch")
+    ax_loss.set_ylabel("Metric")
+    ax_loss.set_title("Training Progress (see MLflow Model Metrics tab for interactive charts)")
+    ax_loss.text(0.5, 0.5, f"Best epoch: {best_epoch+1}\nBest val F1: {best_val_f1:.4f}\n"
+                 f"Test F1: {test_metrics['macro_f1']:.4f}\n"
+                 f"Total time: {total_time:.0f}s",
+                 transform=ax_loss.transAxes, ha='center', va='center', fontsize=14)
+    fig_loss.tight_layout()
+    mlflow.log_figure(fig_loss, "training_summary.png")
+    plt.close(fig_loss)
+
+    # 2. Per-class metrics (using test set multi-label predictions)
+    test_preds_np = []
+    test_labels_np = []
+    model.eval()
+    with torch.no_grad():
+        for batch in test_loader:
+            input_ids = batch["input_ids"].to(device)
+            attention_mask = batch["attention_mask"].to(device)
+            amount = batch["amount"].to(device)
+            currency_idx = batch["currency_idx"].to(device)
+            country_idx = batch["country_idx"].to(device)
+            logits = model(input_ids, attention_mask, amount, currency_idx, country_idx)
+            probs = torch.sigmoid(logits)
+            preds = (probs > 0.5).float()
+            test_preds_np.append(preds.cpu().numpy())
+            test_labels_np.append(batch["labels"].numpy())
+    test_preds_np = np.vstack(test_preds_np)
+    test_labels_np = np.vstack(test_labels_np)
+
+    # Classification report
+    class_names = list(label_binarizer.classes_)
+    report = classification_report(
+        test_labels_np, test_preds_np, target_names=class_names, zero_division=0
+    )
+    mlflow.log_text(report, "classification_report.txt")
+
+    # 3. Per-class F1 bar chart
+    report_dict = classification_report(
+        test_labels_np, test_preds_np, target_names=class_names,
+        output_dict=True, zero_division=0
+    )
+    per_class = {k: v for k, v in report_dict.items()
+                 if k not in ("micro avg", "macro avg", "weighted avg", "samples avg")}
+    f1_vals = [(k, v["f1-score"]) for k, v in per_class.items()]
+    f1_vals.sort(key=lambda x: x[1])
+    fig_f1, ax_f1 = plt.subplots(figsize=(10, max(6, len(f1_vals) * 0.35)))
+    ax_f1.barh([x[0] for x in f1_vals], [x[1] for x in f1_vals], color="steelblue")
+    ax_f1.set_xlabel("F1 Score")
+    ax_f1.set_title("Per-Class F1 Score (Test Set)")
+    ax_f1.set_xlim(0, 1.05)
+    fig_f1.tight_layout()
+    mlflow.log_figure(fig_f1, "per_class_f1.png")
+    plt.close(fig_f1)
+
+    # 4. Data stats (JSON)
+    # Class distribution in training data
+    train_cats = train_df["categories"].apply(
+        lambda x: x if isinstance(x, list) else json.loads(x)
+    )
+    cat_counts = {}
+    for cats in train_cats:
+        for c in cats:
+            cat_counts[c] = cat_counts.get(c, 0) + 1
+    data_stats = {
+        "train_size": len(train_df),
+        "val_size": len(val_df),
+        "test_size": len(test_df),
+        "n_classes": n_classes,
+        "class_distribution": dict(sorted(cat_counts.items(), key=lambda x: -x[1])),
+        "total_params": total_params,
+        "trainable_params": trainable_params,
+    }
+    mlflow.log_text(json.dumps(data_stats, indent=2), "data_stats.json")
+
+    # 5. Sample predictions (CSV) — 50 random test samples
+    sample_size = min(50, len(test_df))
+    sample_idx = np.random.RandomState(42).choice(len(test_df), sample_size, replace=False)
+    sample_descs = test_df["description"].iloc[sample_idx].values
+    sample_true = test_labels_np[sample_idx]
+    sample_pred = test_preds_np[sample_idx]
+    rows = []
+    for i in range(sample_size):
+        true_cats = [class_names[j] for j in range(n_classes) if sample_true[i][j] > 0.5]
+        pred_cats = [class_names[j] for j in range(n_classes) if sample_pred[i][j] > 0.5]
+        rows.append({
+            "description": sample_descs[i],
+            "true_categories": "; ".join(true_cats),
+            "predicted_categories": "; ".join(pred_cats),
+            "correct": true_cats == pred_cats,
+        })
+    sample_csv = pd.DataFrame(rows).to_csv(index=False)
+    mlflow.log_text(sample_csv, "sample_predictions.csv")
+
+    # 6. Label encoder classes (JSON — needed for inference)
+    mlflow.log_text(json.dumps(class_names), "label_classes.json")
 
     print(f"\n[RESULTS] Final test metrics: {json.dumps(final_metrics, indent=2)}")
     return final_metrics
