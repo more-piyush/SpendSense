@@ -616,8 +616,17 @@ def train_distilbert(config, train_df, val_df, test_df, label_binarizer,
     }
     mlflow.log_metrics(final_metrics)
 
-    # Log model artifact
-    mlflow.pytorch.log_model(model, "model")
+    # Log model artifact — save manually to avoid torch.export compatibility issue
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmpdir:
+        model_path = os.path.join(tmpdir, "model.pt")
+        torch.save({
+            "model_state_dict": model.state_dict(),
+            "config": {k: v for k, v in config.items() if not k.startswith("_")},
+            "n_classes": n_classes,
+            "classes": list(label_binarizer.classes_),
+        }, model_path)
+        mlflow.log_artifact(model_path, "model")
     mlflow.log_artifact(config["_config_path"])
 
     # Log peak memory
