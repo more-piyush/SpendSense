@@ -25,7 +25,7 @@ max_length: 48
 # Training — aggressive settings
 learning_rate: 0.002      # 2e-3 (4x higher than base)
 batch_size: 4             # Very small batch (noisy gradients)
-epochs: 8                 # More epochs (expect early stopping)
+epochs: 3                 # Reduced for CPU training time
 warmup_ratio: 0.05        # Minimal warmup
 weight_decay: 0.005       # Lighter regularization
 dropout: 0.1              # Minimal dropout

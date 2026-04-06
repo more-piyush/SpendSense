@@ -24,7 +24,7 @@ max_length: 48
 # Training — tuned settings
 learning_rate: 0.001      # 1e-3 (2x higher than base)
 batch_size: 4             # Smaller batch for better gradient signal
-epochs: 5
+epochs: 3
 warmup_ratio: 0.15        # Longer warmup for stability
 weight_decay: 0.02
 dropout: 0.15             # Less dropout (frozen backbone = less overfitting)
