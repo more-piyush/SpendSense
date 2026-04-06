@@ -47,14 +47,26 @@ services:
       - "8080:8080"
 
   mlflow:
-    build:
-      context: ./training_scripts
-      dockerfile: Dockerfile.mlflow
+    image: ghcr.io/mlflow/mlflow:v3.9.0
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      MLFLOW_TRACKING_URI: http://0.0.0.0:8000
+      MLFLOW_LOGGING_LEVEL: ERROR
+      MLFLOW_SERVER_ALLOWED_HOSTS: "*"
+      MLFLOW_S3_ENDPOINT_URL: https://chi.tacc.chameleoncloud.org:7480
+    env_file:
+      - .env
     ports:
       - "8000:8000"
     volumes:
-      - /mnt/mlflow_persist/mlflow_artifacts:/mlflow-artifacts
-      - /mnt/mlflow_persist/mlflow_db:/app
+      - /mnt/mlflow_persist/postgres_data:/var/lib/postgresql
+    command: >
+      /bin/sh -c "pip install psycopg2-binary boto3 &&
+      mlflow server --backend-store-uri postgresql://user:password@postgres/mlflowdb
+      --artifacts-destination s3://${BUCKET_NAME}/
+      --serve-artifacts --host 0.0.0.0 --port 8000"
 
   # ──────────────────────────────────────────────
   # DATA GENERATION (self-contained, no downloads)

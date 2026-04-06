@@ -18,7 +18,7 @@ RUN pip install --no-cache-dir \
     datasets==2.16.0 \
     xgboost==2.0.3 \
     scikit-learn==1.3.2 \
-    mlflow==2.9.2 \
+    mlflow==3.9.0 \
     optuna==3.4.0 \
     pandas==2.1.4 \
     numpy==1.26.2 \
