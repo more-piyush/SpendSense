@@ -121,6 +121,10 @@ services:
       context: ./training_scripts
       dockerfile: Dockerfile
     command: ["train_categorization.py", "configs/cat_baseline_lr.yaml"]
+    environment:
+      MLFLOW_S3_ENDPOINT_URL: https://chi.tacc.chameleoncloud.org:7480
+    env_file:
+      - .env
     volumes:
       - training_data:/data
       - ./training_scripts/configs:/app/configs
@@ -133,19 +137,26 @@ services:
       context: ./training_scripts
       dockerfile: Dockerfile
     command: ["train_categorization.py", "configs/cat_distilbert_m1medium.yaml"]
+    environment:
+      MLFLOW_S3_ENDPOINT_URL: https://chi.tacc.chameleoncloud.org:7480
+    env_file:
+      - .env
     volumes:
       - training_data:/data
       - ./training_scripts/configs:/app/configs
     depends_on:
       - mlflow
     profiles: ["train"]
-    # No GPU reservation — runs on CPU
 
   train-cat-distilbert-m1medium-v1:
     build:
       context: ./training_scripts
       dockerfile: Dockerfile
     command: ["train_categorization.py", "configs/cat_distilbert_m1medium_v1.yaml"]
+    environment:
+      MLFLOW_S3_ENDPOINT_URL: https://chi.tacc.chameleoncloud.org:7480
+    env_file:
+      - .env
     volumes:
       - training_data:/data
       - ./training_scripts/configs:/app/configs
@@ -158,6 +169,10 @@ services:
       context: ./training_scripts
       dockerfile: Dockerfile
     command: ["train_categorization.py", "configs/cat_distilbert_m1medium_v2.yaml"]
+    environment:
+      MLFLOW_S3_ENDPOINT_URL: https://chi.tacc.chameleoncloud.org:7480
+    env_file:
+      - .env
     volumes:
       - training_data:/data
       - ./training_scripts/configs:/app/configs
@@ -170,6 +185,10 @@ services:
       context: ./training_scripts
       dockerfile: Dockerfile
     command: ["train_categorization.py", "configs/cat_distilbert_base.yaml"]
+    environment:
+      MLFLOW_S3_ENDPOINT_URL: https://chi.tacc.chameleoncloud.org:7480
+    env_file:
+      - .env
     volumes:
       - training_data:/data
       - ./training_scripts/configs:/app/configs
@@ -189,6 +208,10 @@ services:
       context: ./training_scripts
       dockerfile: Dockerfile
     command: ["train_categorization.py", "configs/cat_distilbert_v1.yaml"]
+    environment:
+      MLFLOW_S3_ENDPOINT_URL: https://chi.tacc.chameleoncloud.org:7480
+    env_file:
+      - .env
     volumes:
       - training_data:/data
       - ./training_scripts/configs:/app/configs
@@ -208,6 +231,10 @@ services:
       context: ./training_scripts
       dockerfile: Dockerfile
     command: ["train_categorization.py", "configs/cat_distilbert_v2.yaml"]
+    environment:
+      MLFLOW_S3_ENDPOINT_URL: https://chi.tacc.chameleoncloud.org:7480
+    env_file:
+      - .env
     volumes:
       - training_data:/data
       - ./training_scripts/configs:/app/configs
@@ -227,6 +254,10 @@ services:
       context: ./training_scripts
       dockerfile: Dockerfile
     command: ["train_trend_detection.py", "configs/trend_rf_baseline.yaml"]
+    environment:
+      MLFLOW_S3_ENDPOINT_URL: https://chi.tacc.chameleoncloud.org:7480
+    env_file:
+      - .env
     volumes:
       - training_data:/data
       - ./training_scripts/configs:/app/configs
@@ -239,6 +270,10 @@ services:
       context: ./training_scripts
       dockerfile: Dockerfile
     command: ["train_trend_detection.py", "configs/trend_xgb_v1.yaml"]
+    environment:
+      MLFLOW_S3_ENDPOINT_URL: https://chi.tacc.chameleoncloud.org:7480
+    env_file:
+      - .env
     volumes:
       - training_data:/data
       - ./training_scripts/configs:/app/configs
@@ -251,6 +286,10 @@ services:
       context: ./training_scripts
       dockerfile: Dockerfile
     command: ["train_trend_detection.py", "configs/trend_xgb_optuna.yaml"]
+    environment:
+      MLFLOW_S3_ENDPOINT_URL: https://chi.tacc.chameleoncloud.org:7480
+    env_file:
+      - .env
     volumes:
       - training_data:/data
       - ./training_scripts/configs:/app/configs
@@ -268,6 +307,10 @@ services:
       dockerfile: Dockerfile
     entrypoint: ["python", "promote_model.py"]
     command: ["configs/promote.yaml", "--run-id", "${RUN_ID}", "--action", "evaluate"]
+    environment:
+      MLFLOW_S3_ENDPOINT_URL: https://chi.tacc.chameleoncloud.org:7480
+    env_file:
+      - .env
     volumes:
       - training_data:/data
       - ./training_scripts/configs:/app/configs
@@ -280,6 +323,10 @@ services:
       context: ./training_scripts
       dockerfile: Dockerfile
     command: ["retrain.py", "configs/retrain_categorization.yaml"]
+    environment:
+      MLFLOW_S3_ENDPOINT_URL: https://chi.tacc.chameleoncloud.org:7480
+    env_file:
+      - .env
     volumes:
       - training_data:/data
       - ./training_scripts/configs:/app/configs
@@ -292,6 +339,10 @@ services:
       context: ./training_scripts
       dockerfile: Dockerfile
     command: ["retrain.py", "configs/retrain_trend.yaml"]
+    environment:
+      MLFLOW_S3_ENDPOINT_URL: https://chi.tacc.chameleoncloud.org:7480
+    env_file:
+      - .env
     volumes:
       - training_data:/data
       - ./training_scripts/configs:/app/configs
@@ -308,6 +359,10 @@ services:
       context: ./training_scripts
       dockerfile: Dockerfile
     command: ["explain.py", "configs/explain.yaml", "--all-users"]
+    environment:
+      MLFLOW_S3_ENDPOINT_URL: https://chi.tacc.chameleoncloud.org:7480
+    env_file:
+      - .env
     volumes:
       - training_data:/data
       - ./training_scripts/configs:/app/configs
