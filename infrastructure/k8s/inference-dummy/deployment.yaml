@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: inference-dummy
+  namespace: firefly-platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: inference-dummy
+  template:
+    metadata:
+      labels:
+        app: inference-dummy
+    spec:
+      containers:
+        - name: inference-dummy
+          image: hashicorp/http-echo:1.0
+          args:
+            - '-text={"status":"ok","message":"dummy inference service"}'
+          ports:
+            - containerPort: 5678
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "250m"
+              memory: "256Mi"
