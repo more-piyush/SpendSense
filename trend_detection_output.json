@@ -1,0 +1,36 @@
+{
+  "model": "trend_detection",
+  "description": "This is a sample output from the XGBoost + Isolation Forest ensemble spending trend detection model.",
+
+  "output": {
+    "user_id": "user_0042",
+    "category": "Groceries",
+    "period": "2026-03",
+    "predicted_next_month_spend": 355.12,
+    "anomaly_detection": {
+      "ensemble_score": 0.342,
+      "xgb_residual_score": 0.285,
+      "isolation_forest_score": 0.427,
+      "is_anomaly": false,
+      "anomaly_threshold": 0.7
+    },
+    "trend_analysis": {
+      "predicted_change_pct": 3.68,
+      "trend_direction": "increasing",
+      "spending_vs_history": "above_average",
+      "deviation_from_3m_mean": 46.70
+    },
+    "inference_time_ms": 0.8
+  },
+
+  "notes": {
+    "predicted_next_month_spend": "XGBoost regression prediction of absolute spend for next month in the user's currency.",
+    "ensemble_score": "Weighted combination: 0.6 * xgb_residual_score + 0.4 * isolation_forest_score. Range [0, 1]. Higher = more anomalous.",
+    "xgb_residual_score": "Normalized absolute prediction error. Large residuals suggest the spending pattern deviates from the model's expectation.",
+    "isolation_forest_score": "Normalized anomaly score from Isolation Forest. Measures how isolated this data point is in the 20-dim feature space.",
+    "is_anomaly": "True if ensemble_score > anomaly_threshold. Triggers an alert to the user in Firefly III.",
+    "predicted_change_pct": "Percentage change: (predicted - current) / current * 100.",
+    "trend_direction": "Derived from predicted_change_pct: 'increasing' (>2%), 'decreasing' (<-2%), or 'stable'.",
+    "spending_vs_history": "Comparison of current_spend against rolling_mean_6m: 'above_average', 'below_average', or 'normal' (within 1 std)."
+  }
+}

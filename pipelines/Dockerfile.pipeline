@@ -1,0 +1,6 @@
+FROM python:3.11-slim
+WORKDIR /app
+RUN pip install pandas minio pyarrow numpy pyyaml boto3 requests
+COPY data_pipeline.py .
+COPY config.yaml .
+CMD ["python3", "data_pipeline.py", "config.yaml"]

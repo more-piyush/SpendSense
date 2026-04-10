@@ -1,0 +1,27 @@
+data_mode: raw
+raw_data_dir: /tmp/bls_raw
+output_dir: /tmp/bls_output
+
+local_intrvw24_path: /tmp/intrvw24.zip
+local_hg_path: /tmp/CE-HG-Integ-2024.txt
+
+output_s3:
+  bucket: training-data
+  cat_key: bls_pipeline/categorization_training.parquet
+  trend_key: bls_pipeline/trend_training.parquet
+  report_key: bls_pipeline/pipeline_report.json
+
+s3:
+  endpoint_url: http://localhost:9000
+  access_key: firefly-access-key
+  secret_key: firefly-secret-key
+  bucket: training-data
+
+upload_outputs: true
+n_personas: 750
+min_transactions_per_persona: 5
+min_amount: 0.01
+max_amount: 50000.0
+train_ratio: 0.70
+val_ratio: 0.15
+test_ratio: 0.15
