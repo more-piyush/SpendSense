@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: serving-quantized
+  namespace: proj20
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: serving-quantized
+  template:
+    metadata:
+      labels:
+        app: serving-quantized
+    spec:
+      containers:
+      - name: serving-quantized
+        image: pranalithakkar/serving-quantized:latest
+        ports:
+        - containerPort: 8002
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: serving-quantized-svc
+  namespace: proj20
+spec:
+  selector:
+    app: serving-quantized
+  ports:
+  - port: 8002
+    targetPort: 8002
+  type: ClusterIP
