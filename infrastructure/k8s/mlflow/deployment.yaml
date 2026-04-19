@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: mlflow
-          image: ghcr.io/mlflow/mlflow:v2.12.2
+          image: ghcr.io/mlflow/mlflow:v3.9.0
           command: ["/bin/sh", "-c"]
           args:
             - >
