@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: firefly-config
+  namespace: firefly-platform
+data:
+  APP_ENV: "local"
+  APP_DEBUG: "false"
+  SITE_OWNER: "devops@example.com"
+  APP_URL: "http://129.114.26.214:30080"
+  DB_CONNECTION: "pgsql"
+  DB_HOST: "postgres"
+  DB_PORT: "5432"
+  DB_DATABASE: "firefly"
+  DB_USERNAME: "firefly"
+  TRUSTED_PROXIES: "**"
