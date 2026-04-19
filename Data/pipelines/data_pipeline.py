@@ -1079,6 +1079,16 @@ def build_trend_dataset(
     # Convert to proper monthly periods so we can fill sparse gaps.
     monthly["period"] = pd.PeriodIndex(monthly["period"], freq="M")
     monthly = monthly.sort_values(["persona_id", "major_category", "period"])
+    global_month_index = pd.period_range(
+        start=monthly["period"].min(),
+        end=monthly["period"].max(),
+        freq="M",
+    )
+    print(
+        "[STEP 6] Global month range for trend panel: "
+        f"{str(global_month_index.min())} -> {str(global_month_index.max())} "
+        f"({len(global_month_index)} months)"
+    )
 
     seq_lengths = monthly.groupby(["persona_id", "major_category"]).size()
     print(f"[STEP 6] Persona-category sequences: {len(seq_lengths)}")
@@ -1100,16 +1110,11 @@ def build_trend_dataset(
     for (pid, cat), group in monthly.groupby(["persona_id", "major_category"]):
         group = group.sort_values("period").reset_index(drop=True)
 
-        # CE spending is sparse across categories, so we fill missing months
-        # with zeros instead of dropping the whole persona-category sequence.
-        month_index = pd.period_range(
-            start=group["period"].min(),
-            end=group["period"].max(),
-            freq="M",
-        )
+        # CE spending is sparse across categories, so we align each
+        # persona-category to the full global month range and fill gaps with 0.
         group = (
             group.set_index("period")
-            .reindex(month_index)
+            .reindex(global_month_index)
             .rename_axis("period")
             .reset_index()
         )
