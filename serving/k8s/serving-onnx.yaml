@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: serving-onnx
+  namespace: proj20
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: serving-onnx
+  template:
+    metadata:
+      labels:
+        app: serving-onnx
+    spec:
+      containers:
+      - name: serving-onnx
+        image: pranalithakkar/serving-onnx:latest
+        ports:
+        - containerPort: 8001
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: serving-onnx-svc
+  namespace: proj20
+spec:
+  selector:
+    app: serving-onnx
+  ports:
+  - port: 8001
+    targetPort: 8001
+  type: ClusterIP

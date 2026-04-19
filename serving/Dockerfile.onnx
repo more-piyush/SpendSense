@@ -1,0 +1,8 @@
+FROM python:3.10-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY app_onnx.py .
+COPY onnx_model/ ./onnx_model/
+EXPOSE 8001
+CMD ["uvicorn", "app_onnx:app", "--host", "0.0.0.0", "--port", "8001"]
