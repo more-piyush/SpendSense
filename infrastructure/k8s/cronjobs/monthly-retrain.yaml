@@ -54,4 +54,5 @@ spec:
               configMap:
                 name: training-config
             - name: training-data
-              emptyDir: {}
+              persistentVolumeClaim:
+                claimName: training-state-pvc

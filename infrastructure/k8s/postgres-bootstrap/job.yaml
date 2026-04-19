@@ -1,0 +1,52 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: postgres-bootstrap
+  namespace: firefly-platform
+spec:
+  backoffLimit: 4
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: postgres-bootstrap
+          image: postgres:15
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+              until pg_isready -h postgres.firefly-platform.svc.cluster.local -p 5432 -U "$POSTGRES_USER" -d "$POSTGRES_DB"; do
+                echo "[INFO] Waiting for PostgreSQL to become ready..."
+                sleep 3
+              done
+
+              PGPASSWORD="$POSTGRES_PASSWORD" psql \
+                -h postgres.firefly-platform.svc.cluster.local \
+                -p 5432 \
+                -U "$POSTGRES_USER" \
+                -d "$POSTGRES_DB" <<'SQL'
+              CREATE TABLE IF NOT EXISTS ml_feedback (
+                id BIGSERIAL PRIMARY KEY,
+                user_id BIGINT,
+                transaction_id BIGINT,
+                model_type VARCHAR(32) NOT NULL,
+                predicted_category TEXT,
+                actual_category TEXT,
+                category_name TEXT,
+                anomaly_score DOUBLE PRECISION,
+                predicted_spend NUMERIC(18,2),
+                actual_spend NUMERIC(18,2),
+                feedback_type VARCHAR(32) NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+              );
+
+              CREATE INDEX IF NOT EXISTS idx_ml_feedback_model_type_created_at
+                ON ml_feedback (model_type, created_at DESC);
+
+              CREATE INDEX IF NOT EXISTS idx_ml_feedback_transaction_id
+                ON ml_feedback (transaction_id);
+              SQL
+              echo "[INFO] PostgreSQL feedback schema ready"
+          envFrom:
+            - secretRef:
+                name: postgres-secret

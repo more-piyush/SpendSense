@@ -12,9 +12,11 @@ fi
 kubectl apply -f "${K8S_DIR}/namespace/namespace.yaml"
 kubectl apply -f "${K8S_DIR}/storage/pvc-postgres.yaml"
 kubectl apply -f "${K8S_DIR}/storage/pvc-minio.yaml"
+kubectl apply -f "${K8S_DIR}/storage/pvc-training-state.yaml"
 
 kubectl apply -f "${K8S_DIR}/postgres/deployment.yaml"
 kubectl apply -f "${K8S_DIR}/postgres/service.yaml"
+kubectl apply -f "${K8S_DIR}/postgres-bootstrap/job.yaml"
 
 kubectl apply -f "${K8S_DIR}/minio/deployment.yaml"
 kubectl apply -f "${K8S_DIR}/minio/service.yaml"

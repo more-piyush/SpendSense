@@ -39,6 +39,8 @@ try:
 except ImportError:
     mlflow = None
 
+from utils import load_parquet
+
 
 # ============================================================
 # FEEDBACK COLLECTION
@@ -86,6 +88,7 @@ def collect_trend_feedback(config: dict) -> pd.DataFrame:
 def _collect_feedback_from_db(config: dict, model_type: str) -> pd.DataFrame:
     """Collect feedback from PostgreSQL database."""
     import psycopg2
+    from psycopg2 import errors
 
     db = config.get("database", {})
     conn = psycopg2.connect(
@@ -138,8 +141,13 @@ def _collect_feedback_from_db(config: dict, model_type: str) -> pd.DataFrame:
         ORDER BY f.created_at
         """
 
-    df = pd.read_sql(query, conn)
-    conn.close()
+    try:
+        df = pd.read_sql(query, conn)
+    except errors.UndefinedTable:
+        print("[FEEDBACK] Table 'ml_feedback' does not exist yet, treating feedback as empty")
+        df = pd.DataFrame()
+    finally:
+        conn.close()
 
     print(f"[FEEDBACK] Collected {len(df)} {model_type} feedback records from database")
     return df
@@ -257,7 +265,7 @@ def prepare_categorization_data(
     mix_ratio = config.get("production_mix_ratio", 0.5)
 
     # Load external data
-    external = pd.read_parquet(external_path)
+    external = load_parquet(external_path, config)
     external["sample_weight"] = SAMPLE_WEIGHTS["external"]
     external["data_source"] = "external"
 
@@ -324,7 +332,7 @@ def prepare_trend_data(
     For "Not Useful": flag as false positives for reweighting.
     """
     external_path = config.get("external_data_path", "/data/trend_training.parquet")
-    external = pd.read_parquet(external_path)
+    external = load_parquet(external_path, config)
 
     if feedback.empty:
         print("[DATA MIX] No trend feedback, using external data only")
@@ -574,8 +582,15 @@ def check_data_drift(config: dict) -> dict:
         print("[DRIFT] No reference/current feature paths configured, skipping")
         return {"drift_detected": False}
 
-    ref_df = pd.read_parquet(ref_path)
-    current_df = pd.read_parquet(current_path)
+    try:
+        ref_df = load_parquet(ref_path, config)
+        current_df = load_parquet(current_path, config)
+    except FileNotFoundError:
+        print("[DRIFT] Reference/current feature files not found, skipping")
+        return {"drift_detected": False}
+    except Exception as e:
+        print(f"[DRIFT] Could not load drift feature files, skipping: {e}")
+        return {"drift_detected": False}
 
     results = {}
     alert_features = []

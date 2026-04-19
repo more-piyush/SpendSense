@@ -39,7 +39,7 @@ import requests
 import yaml
 
 try:
-    import boto3
+    import boto3 # type: ignore
     from botocore.client import Config as BotoConfig
 except ImportError:
     boto3 = None
