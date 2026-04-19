@@ -44,11 +44,11 @@ spec:
                   mountPath: /data
               resources:
                 requests:
-                  cpu: "500m"
-                  memory: "1Gi"
+                  cpu: "2"
+                  memory: "8Gi"
                 limits:
-                  cpu: "2000m"
-                  memory: "4Gi"
+                  cpu: "8"
+                  memory: "32Gi"
           volumes:
             - name: runtime-config
               configMap:

@@ -2,10 +2,10 @@
 
 | Service | CPU Request | CPU Limit | Memory Request | Memory Limit | Persistence |
 |---|---:|---:|---:|---:|---|
-| Firefly III | 100m | 250m | 256Mi | 512Mi | No |
-| PostgreSQL | 100m | 250m | 256Mi | 512Mi | Yes |
-| MinIO | 100m | 250m | 256Mi | 512Mi | Yes |
-| MLflow | 100m | 250m | 256Mi | 512Mi | No |
+| Firefly III | 500m | 2 | 1Gi | 4Gi | No |
+| PostgreSQL | 500m | 2 | 2Gi | 8Gi | Yes |
+| MinIO | 500m | 2 | 2Gi | 8Gi | Yes |
+| MLflow | 500m | 2 | 2Gi | 8Gi | No |
 | Serving baseline API | 500m | 1000m | 1Gi | 2Gi | No |
-| Data pipeline CronJob | 250m | 1000m | 512Mi | 2Gi | Ephemeral |
-| Training retrain CronJobs | 500m | 2000m | 1Gi | 4Gi | Ephemeral |
+| Data pipeline CronJob | 1 | 4 | 2Gi | 8Gi | Ephemeral |
+| Training retrain CronJobs | 2 | 8 | 8Gi | 32Gi | Persistent (`training-state-pvc`) |
