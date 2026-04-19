@@ -30,8 +30,8 @@ RUN pip install --no-cache-dir \
     psycopg2-binary==2.9.9 \
     requests==2.31.0 \
     boto3==1.34.0 \
-    s3fs==2023.12.2 \
-    fsspec==2023.12.2
+    s3fs==2023.10.0 \
+    fsspec==2023.10.0
 
 # Copy training scripts and configs
 COPY train_categorization.py .
