@@ -233,18 +233,26 @@ def parse_hierarchical_groupings(hg_path: str) -> pd.DataFrame:
     records = []
     with open(hg_path, "r", encoding="utf-8", errors="replace") as f:
         for line in f:
-            line = line.strip()
-            if not line or line.startswith("#"):
+            raw = line.rstrip()
+            if not raw or raw.startswith("#"):
                 continue
-            # Format: level, title, UCC (tab-separated or fixed-width)
-            parts = line.split("\t")
-            if len(parts) >= 3:
-                level = parts[0].strip()
-                title = parts[1].strip()
-                ucc = parts[2].strip()
-                records.append({
-                    "level": level, "title": title, "ucc": ucc
-                })
+
+            # CE HG files are effectively fixed-width / multi-space separated.
+            parts = re.split(r"\s{2,}", raw.strip())
+            if len(parts) < 4:
+                continue
+
+            level = parts[1].strip()
+            title = parts[2].strip()
+            ucc = parts[3].strip()
+            if not title or not ucc:
+                continue
+
+            records.append({
+                "level": level,
+                "title": title,
+                "ucc": ucc,
+            })
 
     df = pd.DataFrame(records)
     print(f"[INFO] Parsed {len(df)} hierarchical grouping entries")
@@ -572,14 +580,34 @@ def aggregate_items_to_transactions(
     # Parse cost
     mtbi_filtered["COST"] = pd.to_numeric(mtbi_filtered["COST"], errors="coerce").fillna(0)
 
-    # Parse reporting period
-    if "REFYR" in mtbi_filtered.columns and "REFMO" in mtbi_filtered.columns:
+    # Parse reporting period. PUMD files often use REF_YR / REF_MO.
+    year_col = None
+    month_col = None
+    for candidate in ("REFYR", "REF_YR"):
+        if candidate in mtbi_filtered.columns:
+            year_col = candidate
+            break
+    for candidate in ("REFMO", "REF_MO"):
+        if candidate in mtbi_filtered.columns:
+            month_col = candidate
+            break
+
+    if year_col and month_col:
         mtbi_filtered["period"] = (
-            mtbi_filtered["REFYR"].astype(str) + "-" +
-            mtbi_filtered["REFMO"].astype(str).str.zfill(2)
+            pd.to_numeric(mtbi_filtered[year_col], errors="coerce").fillna(2024).astype(int).astype(str)
+            + "-" +
+            pd.to_numeric(mtbi_filtered[month_col], errors="coerce").fillna(1).astype(int).astype(str).str.zfill(2)
         )
     else:
         mtbi_filtered["period"] = "2024-01"
+        print("[STEP 2] WARN: REF year/month columns not found, defaulting all periods to 2024-01")
+
+    unique_periods = sorted(mtbi_filtered["period"].dropna().unique().tolist())
+    print(f"[STEP 2] Using period columns year={year_col}, month={month_col}")
+    print(f"[STEP 2] Unique periods in filtered MTBI: {len(unique_periods)}")
+    if unique_periods:
+        preview = unique_periods[:12]
+        print(f"[STEP 2] Period sample: {preview}{' ...' if len(unique_periods) > len(preview) else ''}")
 
     # Group by persona x major_category x period
     grouped = mtbi_filtered.groupby(
@@ -1041,9 +1069,24 @@ def build_trend_dataset(
         amounts=("amount", list),
     ).reset_index()
 
+    print(f"[STEP 6] Monthly grouped rows before densifying: {len(monthly)}")
+    if monthly.empty:
+        trend_df = pd.DataFrame()
+        trend_df["split"] = pd.Series(dtype="object")
+        print("[STEP 6] No monthly rows available for trend generation")
+        return trend_df
+
     # Convert to proper monthly periods so we can fill sparse gaps.
     monthly["period"] = pd.PeriodIndex(monthly["period"], freq="M")
     monthly = monthly.sort_values(["persona_id", "major_category", "period"])
+
+    seq_lengths = monthly.groupby(["persona_id", "major_category"]).size()
+    print(f"[STEP 6] Persona-category sequences: {len(seq_lengths)}")
+    if not seq_lengths.empty:
+        print(
+            "[STEP 6] Sequence length stats before densifying: "
+            f"min={seq_lengths.min()}, median={seq_lengths.median()}, max={seq_lengths.max()}"
+        )
 
     # Total monthly spend per persona
     total_monthly = txn_df.groupby(["persona_id", "period"])["amount"].sum().reset_index()
@@ -1053,6 +1096,7 @@ def build_trend_dataset(
 
     # Compute rolling features per persona x category
     records = []
+    dense_lengths = []
     for (pid, cat), group in monthly.groupby(["persona_id", "major_category"]):
         group = group.sort_values("period").reset_index(drop=True)
 
@@ -1077,6 +1121,7 @@ def build_trend_dataset(
         group["amounts"] = group["amounts"].apply(
             lambda x: x if isinstance(x, list) else []
         )
+        dense_lengths.append(len(group))
 
         spends = group["current_spend"].to_numpy(dtype=float)
         txn_counts = group["txn_count"].to_numpy(dtype=int)
@@ -1167,6 +1212,14 @@ def build_trend_dataset(
                 "next_month_spend": round(spends[i + 1], 2),
             }
             records.append(record)
+
+    if dense_lengths:
+        dense_series = pd.Series(dense_lengths)
+        print(
+            "[STEP 6] Sequence length stats after densifying: "
+            f"min={dense_series.min()}, median={dense_series.median()}, max={dense_series.max()}"
+        )
+    print(f"[STEP 6] Trend feature rows generated before DataFrame build: {len(records)}")
 
     trend_df = pd.DataFrame(records)
 
@@ -1285,8 +1338,8 @@ def run_pipeline(config: dict):
     print(f"  Trend data:          {trend_path} ({len(trend_df)} rows, hash={trend_hash})")
     print(f"  Pipeline report:     {report_path}")
     if use_s3:
-        bucket = config['s3']['bucket']
-        print(f"  S3 bucket:           s3://{bucket}/training/")
+        out_bucket = config.get("output_s3", {}).get("bucket", config["s3"]["bucket"])
+        print(f"  S3 bucket:           s3://{out_bucket}/")
 
 
 def main():
