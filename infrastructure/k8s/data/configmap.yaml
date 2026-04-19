@@ -5,7 +5,7 @@ metadata:
   namespace: firefly-platform
 data:
   config.yaml: |
-    data_mode: preprocessed
+    data_mode: raw
     raw_data_dir: /data/raw
     output_dir: /data
 

@@ -15,7 +15,7 @@ spec:
           restartPolicy: OnFailure
           containers:
             - name: data-pipeline
-              image: spendsense/data-pipeline:latest
+              image: firefly-data:latest
               imagePullPolicy: IfNotPresent
               command: ["python3", "data_pipeline.py", "/app/runtime-config/config.yaml"]
               env:
