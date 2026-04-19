@@ -1,0 +1,171 @@
+# ============================================================================
+# Firefly III MLOps — data role docker-compose (unified-image edition)
+# ----------------------------------------------------------------------------
+# Every data-role service uses the SAME image (firefly-data:latest).
+# The image is built once from pipelines/Dockerfile; each service just sets
+# a different `command:` to decide which role it plays.
+#
+# Always-on:  minio, minio-init, features, feedback
+# Profile `demo`:  emulator   (`docker compose --profile demo up emulator`)
+# Profile `jobs`:  ingest, retrain-job, drift-job   (one-shot)
+#
+# First build:
+#   docker compose build
+# or incrementally:
+#   docker compose up --build -d
+# ============================================================================
+version: '3.8'
+
+# ---- shared image definition (anchor) --------------------------------------
+# Every data-role service references this via `<<: *data-image`. Compose
+# builds it once and re-uses the same image for every container.
+x-data-image: &data-image
+  build:
+    context: ./pipelines
+    dockerfile: Dockerfile
+  image: firefly-data:latest
+  networks:
+    - firefly_net
+
+x-common-env: &common-env
+  CONFIG_PATH: /app/config.yaml
+  S3_ENDPOINT: http://minio:9000
+  PYTHONUNBUFFERED: "1"
+
+
+services:
+
+  # ---- Object store (separate image — third-party) -------------------------
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER:     firefly-access-key
+      MINIO_ROOT_PASSWORD: firefly-secret-key
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - firefly_net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: minio_init
+    depends_on:
+      minio:
+        condition: service_healthy
+    restart: "no"
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 firefly-access-key firefly-secret-key &&
+      for b in raw-data processed-data training-data production-logs feedback-logs retraining-data drift-reports model-registry; do
+        mc mb -p local/$$b || true;
+      done &&
+      echo 'All buckets provisioned.'
+      "
+    networks:
+      - firefly_net
+
+
+  # ======================================================================
+  # EVERYTHING BELOW THIS LINE USES THE SINGLE firefly-data IMAGE.
+  # Only `command:` and `ports:` differ between services.
+  # ======================================================================
+
+  # ---- Always-on services --------------------------------------------------
+  features:
+    <<: *data-image
+    container_name: features
+    environment: *common-env
+    command: ["python3", "online_feature_service.py"]
+    ports:
+      - "8080:8080"
+    depends_on:
+      - minio
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+
+  feedback:
+    <<: *data-image
+    container_name: feedback
+    environment: *common-env
+    command: ["python3", "feedback_service.py"]
+    ports:
+      - "8100:8100"
+    depends_on:
+      minio:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8100/health"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+
+
+  # ---- Profile: demo -------------------------------------------------------
+  emulator:
+    <<: *data-image
+    container_name: emulator
+    environment:
+      <<: *common-env
+      SERVING_URL:  http://serving:8000
+      FEEDBACK_URL: http://feedback:8100
+    command: ["python3", "data_generator.py"]
+    depends_on:
+      - feedback
+    profiles: ["demo"]
+
+
+  # ---- Profile: jobs (one-shot) --------------------------------------------
+  # Generic ingestion/ETL runner — override command: when invoking
+  #   docker compose --profile jobs run --rm ingest python3 ingest_bls_data.py
+  #   docker compose --profile jobs run --rm ingest python3 data_pipeline.py config.yaml
+  #   docker compose --profile jobs run --rm ingest python3 generate_synthetic_data.py
+  #   docker compose --profile jobs run --rm ingest python3 soda_quality_checks.py
+  #   docker compose --profile jobs run --rm ingest python3 batch_training_pipeline.py
+  ingest:
+    <<: *data-image
+    environment: *common-env
+    depends_on:
+      minio:
+        condition: service_healthy
+    profiles: ["jobs"]
+
+  retrain-job:
+    <<: *data-image
+    environment: *common-env
+    command: ["python3", "build_retraining_dataset.py"]
+    depends_on:
+      minio:
+        condition: service_healthy
+    profiles: ["jobs"]
+
+  drift-job:
+    <<: *data-image
+    environment: *common-env
+    command: ["python3", "drift_monitor.py"]
+    depends_on:
+      minio:
+        condition: service_healthy
+    profiles: ["jobs"]
+
+
+volumes:
+  minio_data:
+
+networks:
+  firefly_net:
+    name: firefly_net
