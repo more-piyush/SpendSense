@@ -55,8 +55,7 @@ services:
       MLFLOW_TRACKING_URI: http://0.0.0.0:8000
       MLFLOW_LOGGING_LEVEL: ERROR
       MLFLOW_SERVER_ALLOWED_HOSTS: "*"
-      MLFLOW_S3_ENDPOINT_URL: https://chi.tacc.chameleoncloud.org:7480
-      MLFLOW_S3_IGNORE_TLS: "true"
+      MLFLOW_S3_ENDPOINT_URL: http://CHAMELEON_FLOATING_IP:9000   # MinIO API port
     env_file:
       - .env
     ports:
@@ -66,7 +65,7 @@ services:
     command: >
       /bin/sh -c "pip install psycopg2-binary boto3 &&
       mlflow server --backend-store-uri postgresql://user:password@postgres/mlflowdb
-      --default-artifact-root s3://proj20-mlflow-artifacts/
+      --default-artifact-root s3://mlflow/
       --serve-artifacts --host 0.0.0.0 --port 8000"
 
   # ──────────────────────────────────────────────
@@ -123,8 +122,7 @@ services:
       dockerfile: Dockerfile
     command: ["train_categorization.py", "configs/cat_baseline_lr.yaml"]
     environment:
-      MLFLOW_S3_ENDPOINT_URL: https://chi.tacc.chameleoncloud.org:7480
-      MLFLOW_S3_IGNORE_TLS: "true"
+      MLFLOW_S3_ENDPOINT_URL: http://CHAMELEON_FLOATING_IP:9000   # MinIO API port
     env_file:
       - .env
     volumes:
@@ -140,8 +138,7 @@ services:
       dockerfile: Dockerfile
     command: ["train_categorization.py", "configs/cat_distilbert_m1medium.yaml"]
     environment:
-      MLFLOW_S3_ENDPOINT_URL: https://chi.tacc.chameleoncloud.org:7480
-      MLFLOW_S3_IGNORE_TLS: "true"
+      MLFLOW_S3_ENDPOINT_URL: http://CHAMELEON_FLOATING_IP:9000   # MinIO API port
     env_file:
       - .env
     volumes:
@@ -157,8 +154,7 @@ services:
       dockerfile: Dockerfile
     command: ["train_categorization.py", "configs/cat_distilbert_m1medium_v1.yaml"]
     environment:
-      MLFLOW_S3_ENDPOINT_URL: https://chi.tacc.chameleoncloud.org:7480
-      MLFLOW_S3_IGNORE_TLS: "true"
+      MLFLOW_S3_ENDPOINT_URL: http://CHAMELEON_FLOATING_IP:9000   # MinIO API port
     env_file:
       - .env
     volumes:
@@ -174,8 +170,7 @@ services:
       dockerfile: Dockerfile
     command: ["train_categorization.py", "configs/cat_distilbert_m1medium_v2.yaml"]
     environment:
-      MLFLOW_S3_ENDPOINT_URL: https://chi.tacc.chameleoncloud.org:7480
-      MLFLOW_S3_IGNORE_TLS: "true"
+      MLFLOW_S3_ENDPOINT_URL: http://CHAMELEON_FLOATING_IP:9000   # MinIO API port
     env_file:
       - .env
     volumes:
@@ -191,8 +186,7 @@ services:
       dockerfile: Dockerfile
     command: ["train_categorization.py", "configs/cat_distilbert_base.yaml"]
     environment:
-      MLFLOW_S3_ENDPOINT_URL: https://chi.tacc.chameleoncloud.org:7480
-      MLFLOW_S3_IGNORE_TLS: "true"
+      MLFLOW_S3_ENDPOINT_URL: http://CHAMELEON_FLOATING_IP:9000   # MinIO API port
     env_file:
       - .env
     volumes:
@@ -215,8 +209,7 @@ services:
       dockerfile: Dockerfile
     command: ["train_categorization.py", "configs/cat_distilbert_v1.yaml"]
     environment:
-      MLFLOW_S3_ENDPOINT_URL: https://chi.tacc.chameleoncloud.org:7480
-      MLFLOW_S3_IGNORE_TLS: "true"
+      MLFLOW_S3_ENDPOINT_URL: http://CHAMELEON_FLOATING_IP:9000   # MinIO API port
     env_file:
       - .env
     volumes:
@@ -239,8 +232,7 @@ services:
       dockerfile: Dockerfile
     command: ["train_categorization.py", "configs/cat_distilbert_v2.yaml"]
     environment:
-      MLFLOW_S3_ENDPOINT_URL: https://chi.tacc.chameleoncloud.org:7480
-      MLFLOW_S3_IGNORE_TLS: "true"
+      MLFLOW_S3_ENDPOINT_URL: http://CHAMELEON_FLOATING_IP:9000   # MinIO API port
     env_file:
       - .env
     volumes:
@@ -263,8 +255,7 @@ services:
       dockerfile: Dockerfile
     command: ["train_trend_detection.py", "configs/trend_rf_baseline.yaml"]
     environment:
-      MLFLOW_S3_ENDPOINT_URL: https://chi.tacc.chameleoncloud.org:7480
-      MLFLOW_S3_IGNORE_TLS: "true"
+      MLFLOW_S3_ENDPOINT_URL: http://CHAMELEON_FLOATING_IP:9000   # MinIO API port
     env_file:
       - .env
     volumes:
@@ -280,8 +271,7 @@ services:
       dockerfile: Dockerfile
     command: ["train_trend_detection.py", "configs/trend_xgb_v1.yaml"]
     environment:
-      MLFLOW_S3_ENDPOINT_URL: https://chi.tacc.chameleoncloud.org:7480
-      MLFLOW_S3_IGNORE_TLS: "true"
+      MLFLOW_S3_ENDPOINT_URL: http://CHAMELEON_FLOATING_IP:9000   # MinIO API port
     env_file:
       - .env
     volumes:
@@ -297,8 +287,7 @@ services:
       dockerfile: Dockerfile
     command: ["train_trend_detection.py", "configs/trend_xgb_optuna.yaml"]
     environment:
-      MLFLOW_S3_ENDPOINT_URL: https://chi.tacc.chameleoncloud.org:7480
-      MLFLOW_S3_IGNORE_TLS: "true"
+      MLFLOW_S3_ENDPOINT_URL: http://CHAMELEON_FLOATING_IP:9000   # MinIO API port
     env_file:
       - .env
     volumes:
@@ -319,8 +308,7 @@ services:
     entrypoint: ["python", "promote_model.py"]
     command: ["configs/promote.yaml", "--run-id", "${RUN_ID}", "--action", "evaluate"]
     environment:
-      MLFLOW_S3_ENDPOINT_URL: https://chi.tacc.chameleoncloud.org:7480
-      MLFLOW_S3_IGNORE_TLS: "true"
+      MLFLOW_S3_ENDPOINT_URL: http://CHAMELEON_FLOATING_IP:9000   # MinIO API port
     env_file:
       - .env
     volumes:
@@ -336,8 +324,7 @@ services:
       dockerfile: Dockerfile
     command: ["retrain.py", "configs/retrain_categorization.yaml"]
     environment:
-      MLFLOW_S3_ENDPOINT_URL: https://chi.tacc.chameleoncloud.org:7480
-      MLFLOW_S3_IGNORE_TLS: "true"
+      MLFLOW_S3_ENDPOINT_URL: http://CHAMELEON_FLOATING_IP:9000   # MinIO API port
     env_file:
       - .env
     volumes:
@@ -353,8 +340,7 @@ services:
       dockerfile: Dockerfile
     command: ["retrain.py", "configs/retrain_trend.yaml"]
     environment:
-      MLFLOW_S3_ENDPOINT_URL: https://chi.tacc.chameleoncloud.org:7480
-      MLFLOW_S3_IGNORE_TLS: "true"
+      MLFLOW_S3_ENDPOINT_URL: http://CHAMELEON_FLOATING_IP:9000   # MinIO API port
     env_file:
       - .env
     volumes:
@@ -374,8 +360,7 @@ services:
       dockerfile: Dockerfile
     command: ["explain.py", "configs/explain.yaml", "--all-users"]
     environment:
-      MLFLOW_S3_ENDPOINT_URL: https://chi.tacc.chameleoncloud.org:7480
-      MLFLOW_S3_IGNORE_TLS: "true"
+      MLFLOW_S3_ENDPOINT_URL: http://CHAMELEON_FLOATING_IP:9000   # MinIO API port
     env_file:
       - .env
     volumes:

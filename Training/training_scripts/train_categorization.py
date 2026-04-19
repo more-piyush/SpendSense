@@ -51,6 +51,7 @@ from utils import (
     setup_mlflow,
     log_environment_info,
     compute_data_hash,
+    load_parquet,
     get_device,
     TrainingTimer,
     log_peak_memory,
@@ -756,8 +757,10 @@ def load_data(config):
     print(f"[INFO] Loading data from {data_path}")
 
     if data_path.endswith(".parquet"):
-        df = pd.read_parquet(data_path)
+        df = load_parquet(data_path, config)
     elif data_path.endswith(".csv"):
+        if data_path.startswith("s3://"):
+            raise ValueError("CSV read from s3:// not supported; use parquet")
         df = pd.read_csv(data_path)
     else:
         raise ValueError(f"Unsupported data format: {data_path}")
@@ -766,8 +769,8 @@ def load_data(config):
     if isinstance(df["categories"].iloc[0], str):
         df["categories"] = df["categories"].apply(json.loads)
 
-    # Log data hash for reproducibility
-    data_hash = compute_data_hash(data_path)
+    # Log data hash for reproducibility (S3 ETag or local SHA-256)
+    data_hash = compute_data_hash(data_path, config)
     mlflow.log_param("data_hash", data_hash)
     mlflow.log_param("data_rows", len(df))
     print(f"[INFO] Loaded {len(df)} rows, data hash: {data_hash}")

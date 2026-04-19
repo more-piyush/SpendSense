@@ -13,8 +13,12 @@ ngram_range: [1, 2]
 C: 1.0
 max_iter: 1000
 
-# Data
-data_path: /data/categorization_training.parquet   # Downloaded from MinIO training-data bucket
+# Data — loaded from MinIO training-data bucket (produced by teammate's data pipeline)
+data_path: s3://training-data/bls_pipeline/categorization_training.parquet
+s3:
+  endpoint_url: http://CHAMELEON_FLOATING_IP:9000   # MinIO API port (NOT console 9001/30901)
+  region: us-east-1
+  # access_key / secret_key come from AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY env vars
 
 # MLflow
 mlflow_tracking_uri: http://CHAMELEON_FLOATING_IP:8000

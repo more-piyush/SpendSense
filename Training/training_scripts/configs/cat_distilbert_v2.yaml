@@ -24,8 +24,11 @@ mixed_precision: true
 # Loss
 loss: bce_with_logits
 
-# Data
-data_path: /data/categorization_training.parquet
+# Data — loaded from MinIO training-data bucket (produced by teammate's data pipeline)
+data_path: s3://training-data/bls_pipeline/categorization_training.parquet
+s3:
+  endpoint_url: http://CHAMELEON_FLOATING_IP:9000
+  region: us-east-1
 
 # MLflow
 mlflow_tracking_uri: http://CHAMELEON_FLOATING_IP:8000

@@ -76,8 +76,73 @@ def log_environment_info():
     return env_info
 
 
-def compute_data_hash(data_path: str) -> str:
-    """Compute SHA-256 hash of training data for reproducibility."""
+def _parse_s3_uri(uri: str):
+    """Split s3://bucket/key into (bucket, key)."""
+    without_scheme = uri[len("s3://"):]
+    parts = without_scheme.split("/", 1)
+    if len(parts) != 2 or not parts[0] or not parts[1]:
+        raise ValueError(f"Invalid S3 URI (expected s3://bucket/key): {uri}")
+    return parts[0], parts[1]
+
+
+def get_s3_storage_options(s3_cfg: dict) -> dict:
+    """Build pandas/fsspec storage_options dict for MinIO-compatible S3.
+
+    Credentials fall back to AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY env vars.
+    """
+    return {
+        "key": s3_cfg.get("access_key") or os.environ.get("AWS_ACCESS_KEY_ID"),
+        "secret": s3_cfg.get("secret_key") or os.environ.get("AWS_SECRET_ACCESS_KEY"),
+        "client_kwargs": {
+            "endpoint_url": s3_cfg.get("endpoint_url"),
+            "region_name": s3_cfg.get("region", "us-east-1"),
+        },
+    }
+
+
+def load_parquet(data_path: str, config: dict) -> pd.DataFrame:
+    """Load a parquet from a local path or s3:// URI.
+
+    For s3://, uses config['s3'] endpoint_url + env-var credentials so MinIO works.
+    """
+    if data_path.startswith("s3://"):
+        s3_cfg = config.get("s3", {})
+        if not s3_cfg.get("endpoint_url"):
+            raise ValueError(
+                "data_path is s3:// but config.s3.endpoint_url is not set"
+            )
+        storage_options = get_s3_storage_options(s3_cfg)
+        print(f"[INFO] Reading parquet from {data_path} via {s3_cfg['endpoint_url']}")
+        return pd.read_parquet(data_path, storage_options=storage_options)
+    return pd.read_parquet(data_path)
+
+
+def compute_data_hash(data_path: str, config: dict = None) -> str:
+    """Compute a stable content fingerprint of training data for reproducibility.
+
+    - Local path: SHA-256 of file bytes (first 16 hex chars).
+    - s3:// URI: MinIO/S3 ETag from head_object (cheap, server-computed).
+    """
+    if data_path.startswith("s3://"):
+        if config is None:
+            raise ValueError("compute_data_hash(s3://...) requires a config")
+        try:
+            import boto3  # type: ignore
+        except ImportError as e:
+            raise ImportError("boto3 is required to hash S3 objects") from e
+        s3_cfg = config.get("s3", {})
+        bucket, key = _parse_s3_uri(data_path)
+        client = boto3.client(
+            "s3",
+            endpoint_url=s3_cfg.get("endpoint_url"),
+            aws_access_key_id=s3_cfg.get("access_key") or os.environ.get("AWS_ACCESS_KEY_ID"),
+            aws_secret_access_key=s3_cfg.get("secret_key") or os.environ.get("AWS_SECRET_ACCESS_KEY"),
+            region_name=s3_cfg.get("region", "us-east-1"),
+        )
+        head = client.head_object(Bucket=bucket, Key=key)
+        etag = head["ETag"].strip('"')
+        return f"etag:{etag[:16]}"
+
     sha = hashlib.sha256()
     with open(data_path, "rb") as f:
         for chunk in iter(lambda: f.read(8192), b""):

@@ -38,9 +38,12 @@ mixed_precision: false    # No-op on CPU
 # Loss
 loss: bce_with_logits
 
-# Data
-data_path: /data/categorization_training.parquet
+# Data — loaded from MinIO training-data bucket (produced by teammate's data pipeline)
+data_path: s3://training-data/bls_pipeline/categorization_training.parquet
 max_samples: 30000        # Subsample train set; val/test auto-scaled to ~3750 each
+s3:
+  endpoint_url: http://CHAMELEON_FLOATING_IP:9000
+  region: us-east-1
 
 # MLflow
 mlflow_tracking_uri: http://mlflow:8000
