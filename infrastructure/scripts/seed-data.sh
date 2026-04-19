@@ -42,8 +42,9 @@ echo "[INFO] Seeding raw data files into ${MINIO_BUCKET}/raw via ${MINIO_ENDPOIN
 docker run --rm \
   --network host \
   -v "${DATA_DIR}:/seed:ro" \
+  --entrypoint /bin/sh \
   minio/mc:latest \
-  /bin/sh -c "
+  -c "
     set -e
     mc alias set local '${MINIO_ENDPOINT}' '${MINIO_ROOT_USER}' '${MINIO_ROOT_PASSWORD}'
     mc mb -p local/${MINIO_BUCKET} || true
