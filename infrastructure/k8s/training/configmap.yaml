@@ -1,0 +1,74 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: training-config
+  namespace: firefly-platform
+data:
+  retrain_categorization.yaml: |
+    model_type: DISTILBERT_CATEGORIZATION
+
+    feedback_source: database
+
+    database:
+      host: postgres.firefly-platform.svc.cluster.local
+      port: 5432
+      dbname: firefly
+      user: firefly
+      password: null
+
+    schedule: weekly
+    override_rate_threshold: 0.15
+    last_retrain_date: null
+
+    base_model: distilbert-base-uncased
+    phase2_learning_rate: 0.000005
+    batch_size: 32
+    epochs: 3
+    freeze_layers: 3
+
+    production_mix_ratio: 0.5
+    external_data_path: /data/categorization_training.parquet
+
+    reference_features_path: /data/reference_features.parquet
+    current_features_path: /data/current_features.parquet
+
+    mlflow_tracking_uri: http://mlflow.firefly-platform.svc.cluster.local:5000
+    experiment_name: categorization_retrain
+    registry_path: /data/model_registry
+
+    state_file: /data/retrain_state_categorization.json
+    retrain_data_path: /tmp/retrain_categorization.parquet
+
+  retrain_trend.yaml: |
+    model_type: XGBOOST_TREND
+
+    feedback_source: database
+
+    database:
+      host: postgres.firefly-platform.svc.cluster.local
+      port: 5432
+      dbname: firefly
+      user: firefly
+      password: null
+
+    schedule: monthly
+    min_feedback_signals: 10
+    last_retrain_date: null
+
+    n_estimators: 100
+    max_depth: 6
+    phase2_learning_rate: 0.01
+    reg_alpha: 0.2
+    reg_lambda: 2.0
+
+    external_data_path: /data/trend_training.parquet
+
+    reference_features_path: /data/reference_trend_features.parquet
+    current_features_path: /data/current_trend_features.parquet
+
+    mlflow_tracking_uri: http://mlflow.firefly-platform.svc.cluster.local:5000
+    experiment_name: trend_retrain
+    registry_path: /data/model_registry
+
+    state_file: /data/retrain_state_trend.json
+    retrain_data_path: /tmp/retrain_trend.parquet

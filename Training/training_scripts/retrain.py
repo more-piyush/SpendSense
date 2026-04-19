@@ -93,7 +93,7 @@ def _collect_feedback_from_db(config: dict, model_type: str) -> pd.DataFrame:
         port=db.get("port", 5432),
         dbname=db.get("dbname", "firefly"),
         user=db.get("user", "firefly"),
-        password=db.get("password", ""),
+        password=db.get("password") or os.environ.get("POSTGRES_PASSWORD", ""),
     )
 
     # Cutoff: only feedback since last retraining

@@ -1,0 +1,26 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: minio-bootstrap
+  namespace: firefly-platform
+spec:
+  backoffLimit: 2
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: minio-bootstrap
+          image: minio/mc:latest
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+              mc alias set local http://minio.firefly-platform.svc.cluster.local:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD"
+              mc mb -p local/mlflow || true
+              mc mb -p local/training-data || true
+              mc mb -p local/processed-data || true
+              mc mb -p local/production-logs || true
+              echo "[INFO] MinIO buckets ready"
+          envFrom:
+            - secretRef:
+                name: minio-secret

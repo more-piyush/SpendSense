@@ -1,8 +1,8 @@
 # Pipeline Skeleton
 
-1. Data team produces or prepares input data later.
-2. Training dummy job represents model training.
-3. MLflow + MinIO provide the future registry/artifact path.
-4. Dummy inference service represents online serving.
-5. Firefly III is the deployed application.
-6. Feedback loop is planned for later integration.
+1. Data CronJob builds training datasets and writes them to MinIO (`training-data` bucket).
+2. Training CronJobs load feedback + datasets, retrain models, and log runs to MLflow.
+3. MLflow persists metadata in PostgreSQL and artifacts in MinIO.
+4. Serving deployment exposes online prediction endpoint at NodePort `30081`.
+5. Firefly III is exposed at NodePort `30080` and can call serving internally.
+6. All external access is via floating IP + NodePort (no domain required).

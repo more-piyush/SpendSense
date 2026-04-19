@@ -3,22 +3,25 @@ set -euo pipefail
 
 NS="firefly-platform"
 
-echo "[INFO] Namespaces / pods / svc / pvc"
+echo "[INFO] Namespaces / pods / svc / pvc / cronjobs"
 kubectl get ns
 kubectl get pods -n "$NS" -o wide
 kubectl get svc -n "$NS"
 kubectl get pvc -n "$NS"
+kubectl get cronjobs -n "$NS"
 
 echo "[INFO] Rollout status"
 kubectl rollout status deployment/postgres -n "$NS" --timeout=240s
 kubectl rollout status deployment/minio -n "$NS" --timeout=240s
 kubectl rollout status deployment/mlflow -n "$NS" --timeout=240s
 kubectl rollout status deployment/firefly -n "$NS" --timeout=240s
-kubectl rollout status deployment/inference-dummy -n "$NS" --timeout=240s
+kubectl rollout status deployment/serving-baseline -n "$NS" --timeout=240s
 
-echo "[INFO] Training job logs"
-kubectl logs job/training-dummy -n "$NS" || true
+echo "[INFO] MinIO bootstrap logs"
+kubectl logs job/minio-bootstrap -n "$NS" || true
 
-echo "[INFO] Firefly URL: http://<NODE_IP>:30080"
-echo "[INFO] MLflow: kubectl port-forward svc/mlflow 5000:5000 -n $NS"
-echo "[INFO] MinIO console: kubectl port-forward svc/minio 9001:9001 -n $NS"
+echo "[INFO] Access URLs"
+echo "[INFO] Firefly: http://${FLOATING_IP:-<FLOATING_IP>}:30080"
+echo "[INFO] Serving API: http://${FLOATING_IP:-<FLOATING_IP>}:30081"
+echo "[INFO] MLflow: http://${FLOATING_IP:-<FLOATING_IP>}:30500"
+echo "[INFO] MinIO Console: http://${FLOATING_IP:-<FLOATING_IP>}:30901"

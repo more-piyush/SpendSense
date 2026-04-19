@@ -5,8 +5,7 @@ metadata:
   namespace: firefly-platform
 spec:
   rules:
-    - host: firefly.local
-      http:
+    - http:
         paths:
           - path: /
             pathType: Prefix

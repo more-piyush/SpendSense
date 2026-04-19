@@ -7,7 +7,7 @@ data:
   APP_ENV: "local"
   APP_DEBUG: "false"
   SITE_OWNER: "devops@example.com"
-  APP_URL: "http://129.114.26.214:30080"
+  APP_URL: "http://<FLOATING_IP>:30080"
   DB_CONNECTION: "pgsql"
   DB_HOST: "postgres"
   DB_PORT: "5432"

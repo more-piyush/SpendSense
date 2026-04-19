@@ -1,10 +1,10 @@
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: monthly-retrain
+  name: data-pipeline-nightly
   namespace: firefly-platform
 spec:
-  schedule: "0 4 1 * *"
+  schedule: "15 2 * * *"
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
@@ -14,16 +14,11 @@ spec:
         spec:
           restartPolicy: OnFailure
           containers:
-            - name: monthly-retrain
-              image: spendsense/training:latest
+            - name: data-pipeline
+              image: spendsense/data-pipeline:latest
               imagePullPolicy: IfNotPresent
-              command: ["python", "retrain.py", "/app/runtime-config/retrain_trend.yaml"]
+              command: ["python3", "data_pipeline.py", "/app/runtime-config/config.yaml"]
               env:
-                - name: POSTGRES_PASSWORD
-                  valueFrom:
-                    secretKeyRef:
-                      name: postgres-secret
-                      key: POSTGRES_PASSWORD
                 - name: AWS_ACCESS_KEY_ID
                   valueFrom:
                     secretKeyRef:
@@ -34,24 +29,22 @@ spec:
                     secretKeyRef:
                       name: minio-secret
                       key: MINIO_ROOT_PASSWORD
-                - name: MLFLOW_S3_ENDPOINT_URL
-                  value: http://minio.firefly-platform.svc.cluster.local:9000
               volumeMounts:
                 - name: runtime-config
-                  mountPath: /app/runtime-config/retrain_trend.yaml
-                  subPath: retrain_trend.yaml
-                - name: training-data
+                  mountPath: /app/runtime-config/config.yaml
+                  subPath: config.yaml
+                - name: pipeline-data
                   mountPath: /data
               resources:
                 requests:
-                  cpu: "500m"
-                  memory: "1Gi"
+                  cpu: "250m"
+                  memory: "512Mi"
                 limits:
-                  cpu: "2000m"
-                  memory: "4Gi"
+                  cpu: "1000m"
+                  memory: "2Gi"
           volumes:
             - name: runtime-config
               configMap:
-                name: training-config
-            - name: training-data
+                name: data-pipeline-config
+            - name: pipeline-data
               emptyDir: {}

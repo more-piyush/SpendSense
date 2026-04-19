@@ -1,45 +1,58 @@
-# Firefly III DevOps / Platform — Initial Implementation
+# Firefly III DevOps / Platform — Integrated Kubernetes Stack
 
-This repository is a complete initial implementation for the DevOps / Platform role.
+This repository now deploys an integrated MLOps stack on Kubernetes with IP-based access (no DNS required).
 
 ## Included components
 
-- Firefly III
+- Firefly III (NodePort)
 - PostgreSQL with persistence
-- MinIO with persistence
-- MLflow
-- Dummy inference API
-- Dummy training job
-- Nightly evaluation CronJob
-- Monthly retrain CronJob
-- Namespace, services, PVCs, scripts, and documentation
+- MinIO with persistence (API + Console NodePort)
+- MLflow (NodePort)
+- Serving API (NodePort)
+- Data pipeline nightly CronJob
+- Training retrain CronJobs (nightly categ check + monthly trend retrain)
+- MinIO bucket bootstrap Job
 
 ## Before running
 
-Edit these placeholders:
-- `<DB_PASSWORD>`
-- `<FIREFLY_APP_KEY>`
-- `<FIREFLY_URL>`
-- `<MINIO_ROOT_USER>`
-- `<MINIO_ROOT_PASSWORD>`
-- `<NODE_IP>`
-
-## Suggested run order
+1. Create secrets:
 
 ```bash
 cd infrastructure
 chmod +x scripts/*.sh
 ./scripts/bootstrap.sh
 ./scripts/create-secrets.sh
+```
+
+2. Set your instance floating IP:
+
+```bash
+export FLOATING_IP=<YOUR_FLOATING_IP>
+```
+
+3. Deploy and validate:
+
+```bash
 ./scripts/deploy-core.sh
 ./scripts/validate-core.sh
 ```
 
-## Browser / UI access
+## External access (Floating IP)
 
-- Firefly III: `http://<NODE_IP>:30080`
-- MLflow: `kubectl port-forward svc/mlflow 5000:5000 -n firefly-platform`
-- MinIO Console: `kubectl port-forward svc/minio 9001:9001 -n firefly-platform`
+- Firefly III: `http://<FLOATING_IP>:30080`
+- Serving API: `http://<FLOATING_IP>:30081`
+- MLflow UI: `http://<FLOATING_IP>:30500`
+- MinIO API: `http://<FLOATING_IP>:30900`
+- MinIO Console: `http://<FLOATING_IP>:30901`
+
+## Container images required
+
+Build and push these images before production use:
+
+- `spendsense/data-pipeline:latest` (from `Data/pipelines/Dockerfile.pipeline`)
+- `spendsense/training:latest` (from `Training/training_scripts/Dockerfile`)
+
+Serving currently uses: `pranalithakkar/serving-baseline:latest`.
 
 ## Teardown
 
@@ -49,5 +62,5 @@ chmod +x scripts/*.sh
 
 ## Notes
 
-- `bootstrap.sh` is intentionally light and assumes you already have Kubernetes / K3s available from your lab setup.
-- This is optimized for the initial implementation milestone, not the final integrated system.
+- Deployment uses internal Kubernetes DNS for service-to-service communication.
+- `deploy-core.sh` renders Firefly `APP_URL` from `FLOATING_IP`.
