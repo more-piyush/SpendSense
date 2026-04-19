@@ -37,6 +37,12 @@ export FLOATING_IP=<YOUR_FLOATING_IP>
 ./scripts/validate-core.sh
 ```
 
+4. Seed raw data required by the data pipeline:
+
+```bash
+./scripts/seed-data.sh
+```
+
 ## External access (Floating IP)
 
 - Firefly III: `http://<FLOATING_IP>:30080`
@@ -49,7 +55,7 @@ export FLOATING_IP=<YOUR_FLOATING_IP>
 
 Build and push these images before production use:
 
-- `spendsense/data-pipeline:latest` (from `Data/pipelines/Dockerfile.pipeline`)
+- `firefly-data:latest` (from `Data/pipelines/Dockerfile`)
 - `spendsense/training:latest` (from `Training/training_scripts/Dockerfile`)
 
 Serving currently uses: `pranalithakkar/serving-baseline:latest`.
@@ -64,3 +70,4 @@ Serving currently uses: `pranalithakkar/serving-baseline:latest`.
 
 - Deployment uses internal Kubernetes DNS for service-to-service communication.
 - `deploy-core.sh` renders Firefly `APP_URL` from `FLOATING_IP`.
+- `seed-data.sh` uploads `Data/intrvw24.zip` and `Data/CE-HG-Integ-2024.txt` into `processed-data/raw/`.
