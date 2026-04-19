@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-kubectl apply -f ../k8s/namespace/namespace.yaml
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+K8S_DIR="${SCRIPT_DIR}/../k8s"
+
+kubectl apply -f "${K8S_DIR}/namespace/namespace.yaml"
 
 read -rsp "Enter PostgreSQL password: " POSTGRES_PASSWORD
 echo
