@@ -2,12 +2,8 @@
 data_pipeline.py — CE Survey ETL: transforms BLS Consumer Expenditures Survey
 data into training-ready parquet files for both categorization and trend detection.
 
-Supports two input modes:
-  A) Pre-processed parquets from MinIO (e.g., bls_2020...parquet through bls_2024...parquet)
-  B) Raw PUMD zip files from BLS or S3
-
 Pipeline Steps (from documentation):
-  1. Load data (from MinIO pre-processed parquets or raw PUMD)
+  1. Download PUMD files from BLS
   2. Persona sampling from FMLI (weighted by FINLWT21)
   3. Item-to-transaction aggregation
   4. Multi-label category assignment (UCC hierarchy + semantic similarity)
@@ -38,12 +34,6 @@ import pandas as pd
 import requests
 import yaml
 
-try:
-    import boto3
-    from botocore.client import Config as BotoConfig
-except ImportError:
-    boto3 = None
-
 warnings.filterwarnings("ignore")
 
 # Reproducibility
@@ -63,7 +53,7 @@ def load_config(config_path: str) -> dict:
 
 
 # ============================================================
-# STEP 0: DOWNLOAD / FETCH PUMD FILES
+# STEP 0: DOWNLOAD PUMD FILES
 # ============================================================
 BLS_BASE_URL = "https://www.bls.gov/cex/pumd/data/comma"
 
@@ -76,51 +66,8 @@ INTERVIEW_FILES = {
 HG_FILE_URL = "https://www.bls.gov/cex/cedict/CE-HG-Integ-2024.txt"
 
 
-def get_s3_client(config: dict):
-    """Create an S3/MinIO client from config."""
-    if boto3 is None:
-        raise ImportError("boto3 is required for S3/MinIO. pip install boto3")
-
-    s3_config = config.get("s3", {})
-    client = boto3.client(
-        "s3",
-        endpoint_url=s3_config.get("endpoint_url"),
-        aws_access_key_id=s3_config.get("access_key") or os.environ.get("AWS_ACCESS_KEY_ID"),
-        aws_secret_access_key=s3_config.get("secret_key") or os.environ.get("AWS_SECRET_ACCESS_KEY"),
-        config=BotoConfig(signature_version="s3v4"),
-        region_name=s3_config.get("region", "us-east-1"),
-    )
-    return client
-
-
-def download_from_s3(config: dict, s3_key: str, dest_path: str, force: bool = False) -> str:
-    """Download a file from S3/MinIO bucket to local path."""
-    if os.path.exists(dest_path) and not force:
-        print(f"[INFO] Already cached locally: {dest_path}")
-        return dest_path
-
-    s3 = get_s3_client(config)
-    bucket = config["s3"]["bucket"]
-
-    print(f"[S3] Downloading s3://{bucket}/{s3_key} -> {dest_path}")
-    os.makedirs(os.path.dirname(dest_path), exist_ok=True)
-    s3.download_file(bucket, s3_key, dest_path)
-    print(f"[S3] Complete: {dest_path} ({os.path.getsize(dest_path)} bytes)")
-    return dest_path
-
-
-def upload_to_s3(config: dict, local_path: str, s3_key: str):
-    """Upload a file to S3/MinIO bucket."""
-    s3 = get_s3_client(config)
-    bucket = config["s3"]["bucket"]
-
-    print(f"[S3] Uploading {local_path} -> s3://{bucket}/{s3_key}")
-    s3.upload_file(local_path, bucket, s3_key)
-    print(f"[S3] Upload complete: s3://{bucket}/{s3_key}")
-
-
 def download_file(url: str, dest_path: str, force: bool = False) -> str:
-    """Download a file from HTTP URL if it doesn't already exist."""
+    """Download a file if it doesn't already exist."""
     if os.path.exists(dest_path) and not force:
         print(f"[INFO] Already exists: {dest_path}")
         return dest_path
@@ -137,70 +84,43 @@ def download_file(url: str, dest_path: str, force: bool = False) -> str:
 
 
 def download_pumd_data(config: dict) -> dict:
-    """Download/fetch all required PUMD files. Returns dict of local paths.
-
-    Data source priority:
-      1. S3/MinIO (if s3 config provided) — downloads from object storage
-      2. BLS website (HTTP download)
-      3. Local path fallback (if specified in config)
-    """
+    """Download all required PUMD files. Returns dict of paths."""
     raw_dir = config.get("raw_data_dir", "/data/raw")
     os.makedirs(raw_dir, exist_ok=True)
     force = config.get("force_download", False)
-    use_s3 = "s3" in config and config["s3"].get("bucket")
 
     paths = {}
 
     # Download interview survey zip
     for name, filename in INTERVIEW_FILES.items():
-        dest_path = os.path.join(raw_dir, filename)
-        s3_key = config.get("s3", {}).get(f"{name}_key", f"raw/{filename}")
-
-        if use_s3:
-            try:
-                download_from_s3(config, s3_key, dest_path, force=force)
-                paths[name] = dest_path
-                continue
-            except Exception as e:
-                print(f"[WARN] S3 download failed for {s3_key}: {e}")
-
-        # Fallback: BLS HTTP download
         url = f"{BLS_BASE_URL}/{filename}"
+        zip_path = os.path.join(raw_dir, filename)
         try:
-            download_file(url, dest_path, force=force)
-            paths[name] = dest_path
+            download_file(url, zip_path, force=force)
+            paths[name] = zip_path
         except Exception as e:
-            print(f"[WARN] HTTP download failed for {url}: {e}")
+            print(f"[WARN] Could not download {url}: {e}")
+            # Check if user provided local path
             local = config.get(f"local_{name}_path")
             if local and os.path.exists(local):
                 paths[name] = local
                 print(f"[INFO] Using local file: {local}")
             else:
                 raise FileNotFoundError(
-                    f"Cannot find {name} data. Set s3 config, or provide 'local_{name}_path'."
+                    f"Cannot find {name} data. Provide 'local_{name}_path' in config."
                 )
 
     # Download hierarchical groupings
-    hg_dest = os.path.join(raw_dir, "CE-HG-Integ-2024.txt")
-    hg_s3_key = config.get("s3", {}).get("hg_key", "raw/CE-HG-Integ-2024.txt")
-
-    if use_s3:
-        try:
-            download_from_s3(config, hg_s3_key, hg_dest, force=force)
-            paths["hg_file"] = hg_dest
-            return paths
-        except Exception as e:
-            print(f"[WARN] S3 download failed for HG file: {e}")
-
+    hg_path = os.path.join(raw_dir, "CE-HG-Integ-2024.txt")
     try:
-        download_file(HG_FILE_URL, hg_dest, force=force)
+        download_file(HG_FILE_URL, hg_path, force=force)
     except Exception:
         local = config.get("local_hg_path")
         if local and os.path.exists(local):
-            hg_dest = local
+            hg_path = local
         else:
             raise
-    paths["hg_file"] = hg_dest
+    paths["hg_file"] = hg_path
 
     return paths
 
@@ -262,140 +182,6 @@ def load_pumd_tables(paths: dict) -> dict:
         tables["memi"] = extract_csv_from_zip(zip_path, r"memi\d")
 
     tables["hg"] = parse_hierarchical_groupings(paths["hg_file"])
-
-    return tables
-
-
-# ============================================================
-# STEP 0c: LOAD PRE-PROCESSED PARQUETS FROM MinIO
-# ============================================================
-def load_preprocessed_from_minio(config: dict) -> pd.DataFrame:
-    """Load pre-processed BLS CE Survey parquets from MinIO.
-
-    Expects parquet files at:
-      s3://<bucket>/<prefix>/bls_2020_*.parquet
-      s3://<bucket>/<prefix>/bls_2021_*.parquet
-      ...
-      s3://<bucket>/<prefix>/bls_2024_*.parquet
-
-    Each parquet should contain expenditure records with columns like:
-      NEWID, UCC, COST, REFMO, REFYR, and household demographics.
-
-    Returns a single combined DataFrame.
-    """
-    s3 = get_s3_client(config)
-    s3_cfg = config["s3"]
-    bucket = s3_cfg["bucket"]
-    prefix = s3_cfg.get("processed_prefix", "bls_ce_survey/processed/")
-
-    # Ensure prefix ends with /
-    if not prefix.endswith("/"):
-        prefix += "/"
-
-    # List all parquet files under the prefix
-    response = s3.list_objects_v2(Bucket=bucket, Prefix=prefix)
-    objects = response.get("Contents", [])
-    parquet_keys = sorted([
-        obj["Key"] for obj in objects
-        if obj["Key"].endswith(".parquet")
-    ])
-
-    if not parquet_keys:
-        raise FileNotFoundError(
-            f"No parquet files found at s3://{bucket}/{prefix}. "
-            f"Found {len(objects)} objects total."
-        )
-
-    print(f"[MinIO] Found {len(parquet_keys)} parquet files in s3://{bucket}/{prefix}")
-
-    # Download and load each parquet
-    raw_dir = config.get("raw_data_dir", "/data/raw")
-    os.makedirs(raw_dir, exist_ok=True)
-    frames = []
-
-    for key in parquet_keys:
-        filename = os.path.basename(key)
-        local_path = os.path.join(raw_dir, filename)
-
-        if not os.path.exists(local_path) or config.get("force_download", False):
-            print(f"[MinIO] Downloading s3://{bucket}/{key} -> {local_path}")
-            s3.download_file(bucket, key, local_path)
-        else:
-            print(f"[MinIO] Cached: {local_path}")
-
-        df = pd.read_parquet(local_path)
-        print(f"  -> {filename}: {len(df)} rows, {len(df.columns)} columns")
-        frames.append(df)
-
-    combined = pd.concat(frames, ignore_index=True)
-    print(f"[MinIO] Combined: {len(combined)} rows from {len(frames)} files")
-    print(f"[MinIO] Columns: {list(combined.columns)}")
-    print(f"[MinIO] Year range: {combined['REFYR'].min() if 'REFYR' in combined.columns else 'N/A'}"
-          f" - {combined['REFYR'].max() if 'REFYR' in combined.columns else 'N/A'}")
-
-    return combined
-
-
-def load_data_from_minio(config: dict) -> dict:
-    """Load pre-processed data from MinIO and structure it like PUMD tables.
-
-    Detects the schema of the parquet files and maps columns to the
-    expected FMLI/MTBI structure.
-    """
-    combined = load_preprocessed_from_minio(config)
-
-    # Standardize column names (uppercase to match PUMD conventions)
-    combined.columns = [c.upper() if c[0].islower() else c for c in combined.columns]
-
-    tables = {}
-
-    # Detect if this is a combined file or needs splitting
-    # The pre-processed parquets likely contain MTBI-like expenditure data
-    if "UCC" in combined.columns and "COST" in combined.columns:
-        # This is expenditure data (MTBI equivalent)
-        tables["mtbi"] = combined
-        print(f"[MinIO] Loaded as MTBI (expenditure data): {len(combined)} rows")
-    else:
-        # Try to treat the whole thing as combined data
-        tables["mtbi"] = combined
-        print(f"[MinIO] Loaded as combined data: {len(combined)} rows")
-
-    # Extract FMLI (household demographics) — deduplicate by NEWID
-    if "NEWID" in combined.columns:
-        demo_cols = [c for c in combined.columns if c in [
-            "NEWID", "FINCBTXM", "FAM_SIZE", "AGE_REF", "REGION",
-            "CUTENURE", "FINLWT21", "REFYR", "REFMO",
-            "EDUC_REF", "MARITAL1", "SEX_REF", "NO_EARNR",
-            "PERSLT18", "PERSOT64",
-        ]]
-        if demo_cols:
-            fmli = combined[demo_cols].drop_duplicates(subset=["NEWID"], keep="last")
-            tables["fmli"] = fmli
-            print(f"[MinIO] Extracted FMLI (demographics): {len(fmli)} unique households")
-
-    # HG (hierarchical groupings) — try to load from S3 or generate from UCC
-    try:
-        s3 = get_s3_client(config)
-        s3_cfg = config["s3"]
-        bucket = s3_cfg["bucket"]
-        hg_key = s3_cfg.get("hg_key", "raw/CE-HG-Integ-2024.txt")
-        hg_path = os.path.join(config.get("raw_data_dir", "/data/raw"), "CE-HG-Integ-2024.txt")
-
-        if not os.path.exists(hg_path):
-            s3.download_file(bucket, hg_key, hg_path)
-        tables["hg"] = parse_hierarchical_groupings(hg_path)
-    except Exception as e:
-        print(f"[WARN] Could not load HG file from S3: {e}")
-        # Generate a minimal HG from UCC codes in the data
-        if "UCC" in combined.columns:
-            ucc_names = combined[["UCC"]].drop_duplicates()
-            ucc_names["level"] = "4"
-            ucc_names["title"] = ucc_names["UCC"].astype(str)
-            ucc_names["ucc"] = ucc_names["UCC"].astype(str)
-            tables["hg"] = ucc_names[["level", "title", "ucc"]]
-            print(f"[MinIO] Generated minimal HG from {len(ucc_names)} UCC codes")
-        else:
-            tables["hg"] = pd.DataFrame(columns=["level", "title", "ucc"])
 
     return tables
 
@@ -1041,13 +827,11 @@ def build_trend_dataset(
         amounts=("amount", list),
     ).reset_index()
 
-    # Convert to proper monthly periods so we can fill sparse gaps.
-    monthly["period"] = pd.PeriodIndex(monthly["period"], freq="M")
+    # Sort chronologically
     monthly = monthly.sort_values(["persona_id", "major_category", "period"])
 
     # Total monthly spend per persona
     total_monthly = txn_df.groupby(["persona_id", "period"])["amount"].sum().reset_index()
-    total_monthly["period"] = pd.PeriodIndex(total_monthly["period"], freq="M")
     total_monthly = total_monthly.rename(columns={"amount": "total_monthly_spend"})
     monthly = monthly.merge(total_monthly, on=["persona_id", "period"], how="left")
 
@@ -1055,36 +839,13 @@ def build_trend_dataset(
     records = []
     for (pid, cat), group in monthly.groupby(["persona_id", "major_category"]):
         group = group.sort_values("period").reset_index(drop=True)
-
-        # CE spending is sparse across categories, so we fill missing months
-        # with zeros instead of dropping the whole persona-category sequence.
-        month_index = pd.period_range(
-            start=group["period"].min(),
-            end=group["period"].max(),
-            freq="M",
-        )
-        group = (
-            group.set_index("period")
-            .reindex(month_index)
-            .rename_axis("period")
-            .reset_index()
-        )
-        group["persona_id"] = pid
-        group["major_category"] = cat
-        group["current_spend"] = group["current_spend"].fillna(0.0)
-        group["txn_count"] = group["txn_count"].fillna(0).astype(int)
-        group["total_monthly_spend"] = group["total_monthly_spend"].fillna(0.0)
-        group["amounts"] = group["amounts"].apply(
-            lambda x: x if isinstance(x, list) else []
-        )
-
-        spends = group["current_spend"].to_numpy(dtype=float)
-        txn_counts = group["txn_count"].to_numpy(dtype=int)
-        periods = group["period"].astype(str).to_numpy()
+        spends = group["current_spend"].values
+        txn_counts = group["txn_count"].values
+        periods = group["period"].values
 
         for i in range(len(group)):
-            if i < 2:
-                # Need some rolling context before training rows are emitted.
+            if i < 3:
+                # Need at least 3 months of history
                 continue
 
             # Target: next month spend
@@ -1171,12 +932,6 @@ def build_trend_dataset(
     trend_df = pd.DataFrame(records)
 
     # Chronological split (70/15/15)
-    if trend_df.empty:
-        trend_df["split"] = pd.Series(dtype="object")
-        print(f"[STEP 6] Trend dataset: {len(trend_df)} rows")
-        print("  train=0, val=0, test=0")
-        return trend_df
-
     trend_df = trend_df.sort_values("period").reset_index(drop=True)
     n = len(trend_df)
     train_end = int(n * 0.7)
@@ -1205,17 +960,10 @@ def run_pipeline(config: dict):
     print("CE SURVEY DATA PIPELINE")
     print("=" * 70)
 
-    # Step 0: Load data — from MinIO pre-processed parquets or raw PUMD
-    data_mode = config.get("data_mode", "auto")
-    use_s3 = "s3" in config and config["s3"].get("bucket")
-
-    if data_mode == "preprocessed" or (data_mode == "auto" and use_s3 and config.get("s3", {}).get("processed_prefix")):
-        print("\n--- STEP 0: Loading pre-processed parquets from MinIO ---")
-        tables = load_data_from_minio(config)
-    else:
-        print("\n--- STEP 0: Loading raw PUMD data ---")
-        paths = download_pumd_data(config)
-        tables = load_pumd_tables(paths)
+    # Step 0: Download / load data
+    print("\n--- STEP 0: Loading PUMD data ---")
+    paths = download_pumd_data(config)
+    tables = load_pumd_tables(paths)
 
     # Step 1: Persona sampling
     print("\n--- STEP 1: Persona Sampling ---")
@@ -1258,35 +1006,12 @@ def run_pipeline(config: dict):
     cat_hash = hashlib.sha256(open(cat_path, "rb").read()).hexdigest()[:16]
     trend_hash = hashlib.sha256(open(trend_path, "rb").read()).hexdigest()[:16]
 
-    # Upload outputs to S3/MinIO if configured
-    use_s3 = "s3" in config and config["s3"].get("bucket")
-    if use_s3 and config.get("upload_outputs", True):
-        print("\n--- Uploading outputs to S3/MinIO ---")
-        # Use output_s3 config if present, otherwise default to same bucket
-        out_s3 = config.get("output_s3", {})
-        out_bucket = out_s3.get("bucket")
-        if out_bucket:
-            # Temporarily override bucket for upload
-            orig_bucket = config["s3"]["bucket"]
-            config["s3"]["bucket"] = out_bucket
-            upload_to_s3(config, cat_path, out_s3.get("cat_key", "categorization_training.parquet"))
-            upload_to_s3(config, trend_path, out_s3.get("trend_key", "trend_training.parquet"))
-            upload_to_s3(config, report_path, out_s3.get("report_key", "pipeline_report.json"))
-            config["s3"]["bucket"] = orig_bucket
-        else:
-            upload_to_s3(config, cat_path, "training/categorization_training.parquet")
-            upload_to_s3(config, trend_path, "training/trend_training.parquet")
-            upload_to_s3(config, report_path, "training/pipeline_report.json")
-
     print(f"\n{'=' * 70}")
     print(f"PIPELINE COMPLETE")
     print(f"{'=' * 70}")
     print(f"  Categorization data: {cat_path} ({len(cat_df)} rows, hash={cat_hash})")
     print(f"  Trend data:          {trend_path} ({len(trend_df)} rows, hash={trend_hash})")
     print(f"  Pipeline report:     {report_path}")
-    if use_s3:
-        bucket = config['s3']['bucket']
-        print(f"  S3 bucket:           s3://{bucket}/training/")
 
 
 def main():
