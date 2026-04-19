@@ -1,0 +1,40 @@
+{
+  "pipeline": "bls_ce_survey_ingestion",
+  "version": "1.0.0",
+  "timestamp": "20260404_001059",
+  "source": "BLS Consumer Expenditures Survey PUMD",
+  "source_url": "https://www.bls.gov/cex/pumd_data.htm",
+  "ucc_codes_mapped": 867,
+  "years": [
+    {
+      "year": "2020",
+      "mtbi_rows": 1579175,
+      "parquet_key": "bls_ce_survey/processed/bls_2020_20260404_001059.parquet",
+      "size_mb": 7
+    },
+    {
+      "year": "2021",
+      "mtbi_rows": 1662145,
+      "parquet_key": "bls_ce_survey/processed/bls_2021_20260404_001059.parquet",
+      "size_mb": 8
+    },
+    {
+      "year": "2022",
+      "mtbi_rows": 1556164,
+      "parquet_key": "bls_ce_survey/processed/bls_2022_20260404_001059.parquet",
+      "size_mb": 7
+    },
+    {
+      "year": "2023",
+      "mtbi_rows": 1509148,
+      "parquet_key": "bls_ce_survey/processed/bls_2023_20260404_001059.parquet",
+      "size_mb": 7
+    },
+    {
+      "year": "2024",
+      "mtbi_rows": 1824449,
+      "parquet_key": "bls_ce_survey/processed/bls_2024_20260404_001059.parquet",
+      "size_mb": 9
+    }
+  ]
+}

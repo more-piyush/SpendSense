@@ -1,0 +1,36 @@
+{
+  "avg_monthly_by_category": {
+    "Education": 64406.54,
+    "Entertainment": 358368.91,
+    "Healthcare": 865704.5,
+    "Household": 291227.47,
+    "Housing": 2119.75,
+    "Insurance": 1074695.87,
+    "Miscellaneous": 83604550.92,
+    "Transportation": 491312.65,
+    "Utilities": 132722.78
+  },
+  "txn_count_by_category": {
+    "Education": 217,
+    "Entertainment": 1997,
+    "Healthcare": 1361,
+    "Household": 1799,
+    "Housing": 10,
+    "Insurance": 635,
+    "Miscellaneous": 2614,
+    "Transportation": 1411,
+    "Utilities": 550
+  },
+  "avg_labels_per_txn": 2.9230696620728716,
+  "min_labels_per_txn": 2,
+  "pct_multilabel": 1.0,
+  "amount_mean": 8201.350707003967,
+  "amount_median": 237.32999999999998,
+  "amount_std": 28067.17143133065,
+  "amount_min": 0.16,
+  "amount_max": 619856.84,
+  "n_personas": 750,
+  "n_categories": 9,
+  "n_transactions": 10594,
+  "issues": []
+}

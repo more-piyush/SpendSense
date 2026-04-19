@@ -1,0 +1,30 @@
+{
+  "model": "categorization",
+  "description": "This is a sample output from the categorization model.",
+
+  "output": {
+    "transaction_id": "txn_20260315_0042",
+    "predicted_categories": [
+      {
+        "category": "Groceries",
+        "confidence": 0.9423
+      },
+      {
+        "category": "Food & Dining",
+        "confidence": 0.8751
+      }
+    ],
+    "abstained": false,
+    "abstention_threshold": 0.7,
+    "max_confidence": 0.9423,
+    "inference_time_ms": 12.4
+  },
+
+  "notes": {
+    "predicted_categories": "Multi-label output. Each category with sigmoid probability > 0.5 threshold is returned. A transaction can belong to multiple categories.",
+    "confidence": "Sigmoid probability from the classification head. Range [0, 1].",
+    "abstained": "True if max_confidence < abstention_threshold (0.7). When abstained=true, the prediction is flagged for human review instead of being applied automatically.",
+    "abstention_threshold": "Configurable. Transactions with low-confidence predictions are not auto-categorized, reducing false positives.",
+    "inference_time_ms": "Wall-clock inference time. Baseline (TF-IDF+LR): ~1ms. DistilBERT frozen backbone on CPU: ~12ms per transaction."
+  }
+}

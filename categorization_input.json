@@ -1,0 +1,21 @@
+{
+  "model": "categorization",
+  "description": "This is a sample input for the categorization model.",
+
+  "input": {
+    "transaction_id": "txn_20260315_0042",
+    "description": "WHOLE FOODS MARKET #10847 AUSTIN TX",
+    "amount": 87.43,
+    "currency": "USD",
+    "country": "US",
+    "timestamp": "2026-03-15T14:32:18Z"
+  },
+
+  "notes": {
+    "description_field": "Raw merchant transaction text. Tokenized by DistilBERT (max_length=48) or TF-IDF (max_features=10000) depending on model variant.",
+    "amount_field": "Transaction amount in original currency. Log-transformed (log1p) before feeding to the model as an auxiliary feature.",
+    "currency_field": "ISO 4217 currency code. Mapped to a learned 20-dim embedding via vocabulary of top 20 currencies.",
+    "country_field": "ISO 3166-1 alpha-2 country code. Mapped to a learned 50-dim embedding via vocabulary of top 50 countries.",
+    "timestamp_field": "Not directly used by the model, but used upstream in the data pipeline for feature engineering and chronological splitting."
+  }
+}
