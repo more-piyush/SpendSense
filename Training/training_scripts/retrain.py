@@ -415,18 +415,18 @@ def retrain_categorization(config: dict, training_data: pd.DataFrame) -> str:
 
     result = subprocess.run(
         [sys.executable, "train_categorization.py", config_path],
-        capture_output=True, text=True, cwd=os.path.dirname(os.path.abspath(__file__)),
+        cwd=os.path.dirname(os.path.abspath(__file__)),
     )
 
     if result.returncode != 0:
-        print(f"[ERROR] Training failed:\n{result.stderr}")
-        raise RuntimeError(f"Categorization retraining failed: {result.stderr}")
+        raise RuntimeError(
+            f"Categorization retraining failed with exit code {result.returncode}"
+        )
 
-    print(result.stdout)
     print(f"[RETRAIN] Categorization retraining complete")
 
     # Extract run ID from output
-    run_id = _extract_run_id(result.stdout, retrain_config)
+    run_id = _extract_run_id("", retrain_config)
     return run_id
 
 
@@ -470,17 +470,17 @@ def retrain_trend(config: dict, training_data: pd.DataFrame) -> str:
 
     result = subprocess.run(
         [sys.executable, "train_trend_detection.py", config_path],
-        capture_output=True, text=True, cwd=os.path.dirname(os.path.abspath(__file__)),
+        cwd=os.path.dirname(os.path.abspath(__file__)),
     )
 
     if result.returncode != 0:
-        print(f"[ERROR] Training failed:\n{result.stderr}")
-        raise RuntimeError(f"Trend retraining failed: {result.stderr}")
+        raise RuntimeError(
+            f"Trend retraining failed with exit code {result.returncode}"
+        )
 
-    print(result.stdout)
     print(f"[RETRAIN] Trend detection retraining complete")
 
-    run_id = _extract_run_id(result.stdout, retrain_config)
+    run_id = _extract_run_id("", retrain_config)
     return run_id
 
 
