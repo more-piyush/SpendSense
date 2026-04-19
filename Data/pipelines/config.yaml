@@ -1,27 +1,75 @@
-data_mode: raw
-raw_data_dir: /tmp/bls_raw
-output_dir: /tmp/bls_output
+# ============================================================================
+# Firefly III MLOps — unified config (data role)
+# ----------------------------------------------------------------------------
+# Single source of truth for every endpoint, bucket, and ratio used by the
+# data-role services. Mount this into every container at /app/config.yaml.
+# ============================================================================
 
-local_intrvw24_path: /tmp/intrvw24.zip
-local_hg_path: /tmp/CE-HG-Integ-2024.txt
-
-output_s3:
-  bucket: training-data
-  cat_key: bls_pipeline/categorization_training.parquet
-  trend_key: bls_pipeline/trend_training.parquet
-  report_key: bls_pipeline/pipeline_report.json
-
+# ---- S3 / MinIO -------------------------------------------------------------
 s3:
-  endpoint_url: http://localhost:9000
-  access_key: firefly-access-key
-  secret_key: firefly-secret-key
-  bucket: training-data
+  endpoint_url: http://minio:9000     # use http://localhost:9000 when running outside docker
+  access_key:   firefly-access-key
+  secret_key:   firefly-secret-key
+  region:       us-east-1
+  secure:       false
 
-upload_outputs: true
-n_personas: 750
-min_transactions_per_persona: 5
-min_amount: 0.01
-max_amount: 50000.0
-train_ratio: 0.70
-val_ratio: 0.15
-test_ratio: 0.15
+buckets:
+  raw:          raw-data
+  processed:    processed-data
+  training:     training-data
+  production:   production-logs       # NEW — model inference requests + responses
+  feedback:     feedback-logs         # NEW — user overrides, accepts, helpful tags
+  retraining:   retraining-data       # NEW — versioned datasets built from feedback
+  drift:        drift-reports         # NEW — weekly PSI reports
+  registry:     model-registry        # owned by training role; read-only for us
+
+# ---- Service endpoints ------------------------------------------------------
+# data-role owns feedback_service + online_feature_service; serving owns predict
+services:
+  serving_url:        http://serving:8000
+  feedback_url:       http://feedback:8100
+  online_features_url: http://features:8080
+
+predict_endpoints:
+  categorize: /predict/categorize     # contract: see docs/contracts.md
+  trend:      /predict/trend
+
+# ---- Emulator (production-traffic driver) ----------------------------------
+emulator:
+  sleep_seconds:        2            # between emulated user actions
+  feedback_delay_range: [0.5, 3.0]   # simulate user thinking time
+  feedback_probabilities:
+    override:   0.20
+    accept:     0.50
+    not_useful: 0.05
+    no_feedback: 0.25
+  n_users: 20                         # rotating user_ids in the emulator
+
+# ---- Retraining dataset builder --------------------------------------------
+retraining:
+  lookback_days:       30             # how far back to read production/feedback
+  mix_ratio:
+    production: 0.5                   # user-generated data share
+    external:   0.5                   # CE Survey share
+  sample_weights:
+    override:  1.0                    # strong label
+    accept:    0.3                    # weak label
+    helpful:   0.5                    # trend confirmation
+    expected:  0.5                    # trend confirmation (non-anomalous)
+    external:  0.5                    # CE Survey pretraining data
+  min_feedback_rows: 10               # block retrain below this floor
+  soda_gate_min_score: 90             # % — below this, write is blocked
+  chronological_split: [0.70, 0.15, 0.15]
+
+# ---- Drift monitor ---------------------------------------------------------
+drift:
+  window_days:          7
+  psi_bins:             10
+  alert_threshold:      0.20          # documented in section 8.3 of design
+  retrain_threshold:    0.25
+  features_to_monitor:  [amount, log_amount, confidence, month_of_year, day_of_week]
+
+# ---- Versioning -------------------------------------------------------------
+random_seed:      42
+feature_version:  "1.0.0"
+pipeline_version: "2.0.0"             # bumped from Q1 (1.0.0) for final
