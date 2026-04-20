@@ -17,6 +17,11 @@ grafana:
   enabled: true
   defaultDashboardsEnabled: true
   adminPassword: "admin123-change-me"
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      searchNamespace: ALL
   service:
     type: NodePort
     nodePort: 30300

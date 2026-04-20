@@ -13,6 +13,10 @@ helm upgrade --install monitoring prometheus-community/kube-prometheus-stack \
   --namespace monitoring \
   -f "${K8S_DIR}/kube-prometheus-stack-values.yaml"
 
+kubectl apply -f "${K8S_DIR}/blackbox-exporter.yaml"
+kubectl apply -f "${K8S_DIR}/probes.yaml"
+kubectl apply -f "${K8S_DIR}/minio-servicemonitor.yaml"
 kubectl apply -f "${K8S_DIR}/prometheus-rules.yaml"
+kubectl apply -f "${K8S_DIR}/grafana-dashboards.yaml"
 
 echo "[INFO] Monitoring stack deployed."
