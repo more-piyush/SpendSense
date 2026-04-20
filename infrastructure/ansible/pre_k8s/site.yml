@@ -1,0 +1,55 @@
+---
+- name: Prepare Chameleon nodes for Kubernetes
+  hosts: k8s_cluster
+  become: true
+  tasks:
+    - name: Install base packages
+      ansible.builtin.apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+          - jq
+          - nfs-common
+        state: present
+        update_cache: true
+
+    - name: Disable swap immediately
+      ansible.builtin.command: swapoff -a
+      changed_when: false
+
+    - name: Remove swap from fstab
+      ansible.builtin.replace:
+        path: /etc/fstab
+        regexp: '^(.*\sswap\s+sw\s+.*)$'
+        replace: '# \1'
+
+    - name: Persist required kernel modules
+      ansible.builtin.copy:
+        dest: /etc/modules-load.d/k8s.conf
+        mode: "0644"
+        content: |
+          overlay
+          br_netfilter
+
+    - name: Load overlay kernel module
+      ansible.builtin.command: modprobe overlay
+      changed_when: false
+
+    - name: Load br_netfilter kernel module
+      ansible.builtin.command: modprobe br_netfilter
+      changed_when: false
+
+    - name: Configure Kubernetes sysctl settings
+      ansible.builtin.copy:
+        dest: /etc/sysctl.d/99-kubernetes-cri.conf
+        mode: "0644"
+        content: |
+          net.bridge.bridge-nf-call-iptables = 1
+          net.bridge.bridge-nf-call-ip6tables = 1
+          net.ipv4.ip_forward = 1
+
+    - name: Apply sysctl settings
+      ansible.builtin.command: sysctl --system
+      changed_when: false

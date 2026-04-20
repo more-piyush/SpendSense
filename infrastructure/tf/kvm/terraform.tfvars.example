@@ -1,0 +1,24 @@
+openstack_cloud       = "openstack"
+cluster_name          = "spendsense"
+keypair_name          = "REPLACE_WITH_CHAMELEON_KEYPAIR"
+ssh_user              = "cc"
+
+# Fill only these Chameleon-specific placeholders.
+image_name            = "REPLACE_WITH_IMAGE_NAME"
+control_plane_flavor  = "REPLACE_WITH_CONTROL_PLANE_FLAVOR"
+worker_flavor         = "REPLACE_WITH_WORKER_FLAVOR"
+external_network_name = "REPLACE_WITH_EXTERNAL_NETWORK"
+floating_ip_pool      = "REPLACE_WITH_FLOATING_IP_POOL"
+
+worker_count = 2
+
+# Optional: uncomment only if you need custom networking or tighter access.
+# network_name = "spendsense-net"
+# subnet_name  = "spendsense-subnet"
+# subnet_cidr  = "192.168.42.0/24"
+# router_name  = "spendsense-router"
+#
+# ssh_allowed_cidrs      = ["0.0.0.0/0"]
+# api_allowed_cidrs      = ["0.0.0.0/0"]
+# http_allowed_cidrs     = ["0.0.0.0/0"]
+# nodeport_allowed_cidrs = ["0.0.0.0/0"]

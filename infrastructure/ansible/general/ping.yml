@@ -1,0 +1,7 @@
+---
+- name: Verify SSH connectivity to Chameleon nodes
+  hosts: k8s_cluster
+  gather_facts: false
+  tasks:
+    - name: Ping hosts
+      ansible.builtin.ping:
