@@ -15,7 +15,7 @@ spec:
           restartPolicy: OnFailure
           containers:
             - name: nightly-eval
-              image: docker.io/spendsense/training:registry-v1
+              image: spendsense/training:latest
               imagePullPolicy: IfNotPresent
               command: ["python", "retrain.py", "/app/runtime-config/retrain_categorization.yaml"]
               env:

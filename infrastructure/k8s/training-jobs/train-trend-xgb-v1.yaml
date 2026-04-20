@@ -9,7 +9,7 @@ spec:
       restartPolicy: OnFailure
       containers:
         - name: train-trend-xgb-v1
-          image: docker.io/spendsense/training:registry-v1
+          image: spendsense/training:latest
           imagePullPolicy: IfNotPresent
           command: ["python", "train_trend_detection.py", "/app/runtime-config/trend_xgb_v1.yaml"]
           env:

@@ -9,17 +9,14 @@ spec:
       restartPolicy: OnFailure
       containers:
         - name: set-active-models
-          image: docker.io/spendsense/training:registry-v1
+          image: spendsense/training:latest
           imagePullPolicy: IfNotPresent
           command:
             - "python"
             - "set_active_models.py"
             - "--registry-path"
             - "s3://mlflow/registry"
-            - "--categorization"
-            - "cat_distilbert_v1"
-            - "--trend"
-            - "trend_xgb_v1"
+            - "--auto-select"
           volumeMounts:
             - name: training-data
               mountPath: /data

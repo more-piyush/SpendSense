@@ -1,9 +1,9 @@
-"""Set active production model IDs for categorization and trend tasks."""
+"""Set active production model IDs or auto-select winners from the registry."""
 
 import argparse
 import json
 
-from utils import load_active_models, set_active_models
+from utils import load_active_models, set_active_models, update_active_model_selection
 
 
 def main():
@@ -23,13 +23,21 @@ def main():
         dest="active_trend_model",
         help="Model ID to mark active for trend detection",
     )
+    parser.add_argument(
+        "--auto-select",
+        action="store_true",
+        help="Pick the current best categorization and trend models from registry metrics",
+    )
     args = parser.parse_args()
 
-    updated = set_active_models(
-        registry_path=args.registry_path,
-        active_categorization_model=args.active_categorization_model,
-        active_trend_model=args.active_trend_model,
-    )
+    if args.auto_select:
+        updated = update_active_model_selection(args.registry_path)
+    else:
+        updated = set_active_models(
+            registry_path=args.registry_path,
+            active_categorization_model=args.active_categorization_model,
+            active_trend_model=args.active_trend_model,
+        )
     print(json.dumps(updated, indent=2))
     print(json.dumps(load_active_models(args.registry_path), indent=2))
 

@@ -9,7 +9,7 @@ spec:
       restartPolicy: OnFailure
       containers:
         - name: train-cat-logreg-baseline
-          image: docker.io/spendsense/training:registry-v1
+          image: spendsense/training:latest
           imagePullPolicy: IfNotPresent
           command: ["python", "train_categorization.py", "/app/runtime-config/cat_logreg_baseline.yaml"]
           env:

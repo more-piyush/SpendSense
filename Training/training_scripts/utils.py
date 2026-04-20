@@ -419,7 +419,171 @@ def set_active_models(
     current["updated_at"] = datetime.utcnow().isoformat()
     save_json_document(active_models_file, current, config=registry_config)
 
+    registry_file = _registry_file_path(registry_path, "registry.json")
+    entries = _load_registry_entries(registry_file, config=registry_config)
+    for entry in entries:
+        task_type = entry.get("task_type")
+        if task_type == "categorization":
+            active_model_id = current["active_categorization_model"]
+        elif task_type == "trend":
+            active_model_id = current["active_trend_model"]
+        else:
+            active_model_id = None
+
+        entry["selection_state"] = (
+            "active" if active_model_id and entry.get("model_id") == active_model_id else "inactive"
+        )
+        entry["updated_at"] = datetime.utcnow().isoformat()
+    _save_registry_entries(registry_file, entries, config=registry_config)
+
     print(f"[REGISTRY] Active models updated: {json.dumps(current, indent=2)}")
+    return current
+
+
+def _get_first_metric(metrics: dict, candidates: list[str]):
+    """Return the first present metric value from a list of candidate keys."""
+    for key in candidates:
+        if key in metrics and metrics[key] is not None:
+            return metrics[key]
+    return None
+
+
+def _categorization_score(entry: dict) -> tuple:
+    """Score categorization candidates. Higher is better."""
+    metrics = entry.get("eval_metrics", {})
+    macro_f1 = _get_first_metric(metrics, ["test_macro_f1", "macro_f1"])
+    accuracy = _get_first_metric(
+        metrics,
+        ["test_subset_accuracy", "test_accuracy", "test_exact_match_accuracy"],
+    )
+    abstention = _get_first_metric(
+        metrics,
+        ["test_abstention_rate", "abstention_rate"],
+    )
+
+    if macro_f1 is None:
+        macro_f1 = float("-inf")
+    if accuracy is None:
+        accuracy = float("-inf")
+
+    # Prefer abstention inside the recommended 5%-20% band, then closer to 10%.
+    abstention_in_band = 0
+    abstention_closeness = float("-inf")
+    if abstention is not None:
+        abstention_in_band = 1 if 0.05 <= abstention <= 0.20 else 0
+        abstention_closeness = -abs(abstention - 0.10)
+
+    return (
+        macro_f1,
+        accuracy,
+        abstention_in_band,
+        abstention_closeness,
+        entry.get("created_at", ""),
+    )
+
+
+def _trend_score(entry: dict) -> tuple:
+    """Score trend candidates. Higher is better after sign-normalization."""
+    metrics = entry.get("eval_metrics", {})
+    rmse = _get_first_metric(
+        metrics,
+        ["xgb_optuna_test_rmse", "xgb_test_rmse", "rf_test_rmse"],
+    )
+    mae = _get_first_metric(
+        metrics,
+        ["xgb_optuna_test_mae", "xgb_test_mae", "rf_test_mae"],
+    )
+    r2 = _get_first_metric(
+        metrics,
+        ["xgb_optuna_test_r2", "xgb_test_r2", "rf_test_r2"],
+    )
+    precision_at_5 = _get_first_metric(
+        metrics,
+        ["xgb_optuna_precision_at_5", "xgb_precision_at_5", "rf_precision_at_5"],
+    )
+
+    if rmse is None:
+        rmse = float("inf")
+    if mae is None:
+        mae = float("inf")
+    if r2 is None:
+        r2 = float("-inf")
+    if precision_at_5 is None:
+        precision_at_5 = float("-inf")
+
+    return (
+        -rmse,
+        -mae,
+        r2,
+        precision_at_5,
+        entry.get("created_at", ""),
+    )
+
+
+def _choose_best_candidate(entries: list, task_type: str):
+    """Pick the best candidate entry for a task based on stored evaluation metrics."""
+    eligible = [
+        entry for entry in entries
+        if entry.get("task_type") == task_type
+        and entry.get("training_mode", "initial") == "initial"
+        and entry.get("status") in {"CANDIDATE", "TRAINING", "SHADOW", "CANARY", "PRODUCTION"}
+    ]
+    if not eligible:
+        return None
+
+    if task_type == "categorization":
+        return max(eligible, key=_categorization_score)
+    return max(eligible, key=_trend_score)
+
+
+def update_active_model_selection(registry_path: str, config: dict = None) -> dict:
+    """Recompute active model winners from registry metrics and persist selections."""
+    registry_file = _registry_file_path(registry_path, "registry.json")
+    active_models_file = _registry_file_path(registry_path, "active_models.json")
+    config = config or {}
+
+    entries = _load_registry_entries(registry_file, config=config)
+    current = load_json_document(
+        active_models_file,
+        default={
+            "active_categorization_model": None,
+            "active_trend_model": None,
+            "updated_at": datetime.utcnow().isoformat(),
+        },
+        config=config,
+    )
+
+    best_categorization = _choose_best_candidate(entries, "categorization")
+    best_trend = _choose_best_candidate(entries, "trend")
+
+    current["active_categorization_model"] = (
+        best_categorization.get("model_id") if best_categorization else None
+    )
+    current["active_trend_model"] = best_trend.get("model_id") if best_trend else None
+    current["updated_at"] = datetime.utcnow().isoformat()
+
+    for entry in entries:
+        task_type = entry.get("task_type")
+        if task_type == "categorization":
+            active_model_id = current["active_categorization_model"]
+        elif task_type == "trend":
+            active_model_id = current["active_trend_model"]
+        else:
+            active_model_id = None
+
+        entry["selection_state"] = (
+            "active" if active_model_id and entry.get("model_id") == active_model_id else "inactive"
+        )
+        entry["updated_at"] = datetime.utcnow().isoformat()
+
+    save_json_document(active_models_file, current, config=config)
+    _save_registry_entries(registry_file, entries, config=config)
+
+    print(
+        "[REGISTRY] Auto-selected active models: "
+        f"categorization={current['active_categorization_model']}, "
+        f"trend={current['active_trend_model']}"
+    )
     return current
 
 
@@ -491,4 +655,6 @@ def register_candidate_model(config: dict, run_id: str, metrics: dict) -> dict:
         f"[REGISTRY] Registered candidate {model_id} "
         f"(task={task_type}, family={model_family}, version={version}, status={entry['status']})"
     )
+    if config.get("training_mode", "initial") == "initial":
+        update_active_model_selection(registry_path, config=config)
     return entry
