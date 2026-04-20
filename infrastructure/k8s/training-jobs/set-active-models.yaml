@@ -11,6 +11,19 @@ spec:
         - name: set-active-models
           image: spendsense/training:latest
           imagePullPolicy: IfNotPresent
+          env:
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: minio-secret
+                  key: MINIO_ROOT_USER
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-secret
+                  key: MINIO_ROOT_PASSWORD
+            - name: MLFLOW_S3_ENDPOINT_URL
+              value: http://minio.firefly-platform.svc.cluster.local:9000
           command:
             - "python"
             - "set_active_models.py"
