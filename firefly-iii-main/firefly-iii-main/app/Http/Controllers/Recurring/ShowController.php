@@ -1,0 +1,145 @@
+<?php
+
+/**
+ * ShowController.php
+ * Copyright (c) 2019 james@firefly-iii.org
+ *
+ * This file is part of Firefly III (https://github.com/firefly-iii).
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+declare(strict_types=1);
+
+namespace FireflyIII\Http\Controllers\Recurring;
+
+use Carbon\Carbon;
+use FireflyIII\Exceptions\FireflyException;
+use FireflyIII\Http\Controllers\Controller;
+use FireflyIII\Models\Attachment;
+use FireflyIII\Models\Recurrence;
+use FireflyIII\Repositories\Attachment\AttachmentRepositoryInterface;
+use FireflyIII\Repositories\Recurring\RecurringRepositoryInterface;
+use FireflyIII\Support\Http\Controllers\GetConfigurationData;
+use FireflyIII\Support\JsonApi\Enrichments\RecurringEnrichment;
+use FireflyIII\Transformers\AttachmentTransformer;
+use FireflyIII\Transformers\RecurrenceTransformer;
+use FireflyIII\User;
+use Illuminate\Contracts\View\Factory;
+use Illuminate\View\View;
+use Symfony\Component\HttpFoundation\ParameterBag;
+
+/**
+ * Class ShowController
+ */
+final class ShowController extends Controller
+{
+    use GetConfigurationData;
+
+    private RecurringRepositoryInterface $repository;
+
+    /**
+     * IndexController constructor.
+     */
+    public function __construct()
+    {
+        parent::__construct();
+        app('view')->share('showCategory', true);
+
+        // translations:
+        $this->middleware(function ($request, $next) {
+            app('view')->share('mainTitleIcon', 'fa-paint-brush');
+            app('view')->share('title', (string) trans('firefly.recurrences'));
+
+            $this->repository = app(RecurringRepositoryInterface::class);
+
+            return $next($request);
+        });
+    }
+
+    /**
+     * Show a single recurring transaction.
+     *
+     * @return Factory|View
+     *
+     * @throws FireflyException
+     */
+    public function show(Recurrence $recurrence): Factory|\Illuminate\Contracts\View\View
+    {
+        $repos                  = app(AttachmentRepositoryInterface::class);
+
+        // enrich
+        /** @var User $admin */
+        $admin                  = auth()->user();
+        $enrichment             = new RecurringEnrichment();
+        $enrichment->setUser($admin);
+
+        /** @var Recurrence $recurrence */
+        $recurrence             = $enrichment->enrichSingle($recurrence);
+
+        /** @var RecurrenceTransformer $transformer */
+        $transformer            = app(RecurrenceTransformer::class);
+        $transformer->setParameters(new ParameterBag());
+
+        $array                  = $transformer->transform($recurrence);
+
+        $groups                 = $this->repository->getTransactions($recurrence);
+        $today                  = today(config('app.timezone'));
+        $array['repeat_until']  = null !== $array['repeat_until'] ? new Carbon($array['repeat_until']) : null;
+        $array['journal_count'] = $this->repository->getJournalCount($recurrence);
+
+        // transform dates back to Carbon objects and expand information
+        foreach ($array['repetitions'] as $index => $repetition) {
+            foreach ($repetition['occurrences'] as $item => $occurrence) {
+                $date                                               = new Carbon($occurrence)->startOfDay();
+                $set                                                = [
+                    'date'  => $date,
+                    'fired' => $this->repository->createdPreviously($recurrence, $date) || $this->repository->getJournalCount($recurrence, $date) > 0,
+                ];
+                $array['repetitions'][$index]['occurrences'][$item] = $set;
+            }
+        }
+
+        // add attachments to the recurrence object.
+        $attachments            = $recurrence->attachments()->get();
+        $array['attachments']   = [];
+        $attachmentTransformer  = app(AttachmentTransformer::class);
+
+        /** @var Attachment $attachment */
+        foreach ($attachments as $attachment) {
+            $item                   = $attachmentTransformer->transform($attachment);
+            $item['file_exists']    = $repos->exists($attachment); // TODO this should be part of the transformer
+            $array['attachments'][] = $item;
+        }
+
+        if (null !== $array['nr_of_repetitions']) {
+            $left = $array['nr_of_repetitions'] - $array['journal_count'];
+            $left = (int) max(0, $left);
+            // limit each repetition to X occurrences:
+            foreach ($array['repetitions'] as $index => $repetition) {
+                $array['repetitions'][$index]['occurrences'] = array_slice($repetition['occurrences'], 0, $left);
+            }
+        }
+
+        $subTitle               = (string) trans('firefly.overview_for_recurrence', ['title' => $recurrence->title]);
+
+        return view('recurring.show', [
+            'recurrence' => $recurrence,
+            'subTitle'   => $subTitle,
+            'array'      => $array,
+            'groups'     => $groups,
+            'today'      => $today,
+        ]);
+    }
+}

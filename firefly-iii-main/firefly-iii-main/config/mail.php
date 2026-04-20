@@ -1,0 +1,102 @@
+<?php
+
+/**
+ * mail.php
+ * Copyright (c) 2019 james@firefly-iii.org.
+ *
+ * This file is part of Firefly III (https://github.com/firefly-iii).
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+declare(strict_types=1);
+use function Safe\parse_url;
+
+return [
+    /*
+    |--------------------------------------------------------------------------
+    | Default Mailer
+    |--------------------------------------------------------------------------
+    |
+    | This option controls the default mailer that is used to send any email
+    | messages sent by your application. Alternative mailers may be setup
+    | and used as needed; however, this mailer will be used by default.
+    |
+    */
+    'default'  => envDefaultWhenEmpty(env('MAIL_MAILER'), 'log'),
+
+    'mailers'  => [
+        'smtp'       => [
+            'transport'         => 'smtp',
+            'host'              => envDefaultWhenEmpty(env('MAIL_HOST'), 'smtp.mailtrap.io'),
+            'port'              => (int) env('MAIL_PORT', 2525),
+            'encryption'        => envDefaultWhenEmpty(env('MAIL_ENCRYPTION'), 'tls'),
+            'username'          => envDefaultWhenEmpty(env('MAIL_USERNAME'), 'user@example.com'),
+            'password'          => envDefaultWhenEmpty(env('MAIL_PASSWORD'), 'password'),
+            'timeout'           => null,
+            'scheme'            => env('MAIL_SCHEME'),
+            'url'               => env('MAIL_URL'),
+            'local_domain'      => env('MAIL_EHLO_DOMAIN', parse_url((string) env('APP_URL', 'http://localhost'), PHP_URL_HOST)),
+            'verify_peer'       => env('MAIL_VERIFY_PEER', true),
+            'allow_self_signed' => env('MAIL_ALLOW_SELF_SIGNED', false),
+            'verify_peer_name'  => env('MAIL_VERIFY_PEER_NAME', true),
+        ],
+        'mailersend' => [
+            'transport' => 'mailersend',
+        ],
+        'ses'        => [
+            'transport' => 'ses',
+        ],
+
+        'mailgun'    => [
+            'transport' => 'mailgun',
+        ],
+
+        'mandrill'   => [
+            'transport' => 'mandrill',
+        ],
+
+        'postmark'   => [
+            'transport' => 'postmark',
+        ],
+
+        'sendmail'   => [
+            'transport' => 'sendmail',
+            'path'      => envDefaultWhenEmpty(env('MAIL_SENDMAIL_COMMAND'), '/usr/sbin/sendmail -bs'),
+        ],
+        'log'        => [
+            'transport' => 'log',
+            'channel'   => env('MAIL_LOG_CHANNEL', 'stack'),
+            'level'     => 'info',
+        ],
+        'null'       => [
+            'transport' => 'log',
+            'channel'   => env('MAIL_LOG_CHANNEL', 'stack'),
+            'level'     => 'notice',
+        ],
+
+        'array'      => [
+            'transport' => 'array',
+        ],
+    ],
+
+    'from'     => ['address' => envDefaultWhenEmpty(env('MAIL_FROM'), 'changeme@example.com'), 'name' => 'Firefly III Mailer'],
+    'markdown' => [
+        'theme' => 'default',
+
+        'paths' => [
+            resource_path('views/vendor/mail'),
+        ],
+    ],
+];

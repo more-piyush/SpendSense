@@ -1,0 +1,77 @@
+# Welcome to Mago!
+# For full documentation, see https://mago.carthage.software/tools/overview
+php-version = "8.5.0"
+
+[source]
+workspace = "."
+paths = ["app/", "database/factories/", "database/migrations/", "database/seeders/", "tests/", "resources/lang/en_US"]
+includes = ["vendor"]
+excludes = []
+
+[formatter]
+print-width = 160
+tab-width = 4
+use-tabs = false
+trailing-comma = false
+method-chain-breaking-style = "same_line"
+preserve-breaking-array-like = true
+align-assignment-like = true
+null-type-hint = "null_pipe"
+sort-class-methods = true
+
+[linter]
+integrations = ["symfony", "laravel", "phpunit"]
+excludes = ["app/Providers/AppServiceProvider.php"]  # Additionally excluded from linter only
+
+[linter.rules]
+halstead = { effort-threshold = 250000, volume-threshold = 200000, difficulty-threshold = 1000, enabled = true } # way too high
+cyclomatic-complexity = { enabled = true, threshold = 255 } # way too high
+kan-defect = { enabled = true, threshold = 20 } # way too high
+too-many-properties = { enabled = true, threshold = 25 } # way too high
+no-request-all = { enabled = true }
+prefer-view-array = { enabled = false } # to be continued.
+assertion-style = { enabled = false }
+no-boolean-flag-parameter = { enabled = false }
+prefer-static-closure = { enabled = false }
+no-literal-password = { enabled = false }
+too-many-enum-cases = { enabled = false }
+tagged-fixme = { enabled = false }
+excessive-parameter-list = { enabled = false }
+prefer-first-class-callable={ enabled = false }
+prefer-arrow-function = { enabled = false }
+ambiguous-function-call = { enabled = false } # very specific rule.
+literal-named-argument = { enabled = false } # insanely specific.
+prefer-early-continue = { enabled = false } # does NOT improve readability.
+middleware-in-routes = { enabled = false } # I like to do this.
+too-many-methods = { enabled = false, threshold = 100 } # arbitrary nonsense.
+tagged-todo = { enabled = false } # weird rule
+
+
+
+[analyzer]
+find-unused-definitions = true
+find-unused-expressions = true
+analyze-dead-code = false
+memoize-properties = true
+allow-possibly-undefined-array-keys = true
+check-throws = true
+check-missing-override = false
+find-unused-parameters = false
+strict-list-index-checks = false
+no-boolean-literal-comparison = false
+check-missing-type-hints = false
+register-super-globals = true
+
+# deze mag iedereen
+[[guard.perimeter.rules]]
+namespace = "FireflyIII\\"
+permit = ["Carbon\\Carbon"]
+
+# guard rules
+[[guard.perimeter.rules]]
+namespace = "FireflyIII\\Services"
+permit = ["@self", "@native","FireflyIII\\Models"]
+
+[[guard.perimeter.rules]]
+namespace = "FireflyIII\\Transformers"
+permit = ["@self", "@native","FireflyIII\\Models"]

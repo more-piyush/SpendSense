@@ -1,0 +1,172 @@
+<?php
+
+/**
+ * AccountController.php
+ * Copyright (c) 2019 james@firefly-iii.org
+ *
+ * This file is part of Firefly III (https://github.com/firefly-iii).
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+declare(strict_types=1);
+
+namespace FireflyIII\Api\V1\Controllers\Chart;
+
+use Carbon\Carbon;
+use FireflyIII\Api\V1\Controllers\Controller;
+use FireflyIII\Api\V1\Requests\Chart\ChartRequest;
+use FireflyIII\Enums\UserRoleEnum;
+use FireflyIII\Exceptions\FireflyException;
+use FireflyIII\Models\Account;
+use FireflyIII\Models\TransactionCurrency;
+use FireflyIII\Repositories\Account\AccountRepositoryInterface;
+use FireflyIII\Support\Facades\Navigation;
+use FireflyIII\Support\Facades\Steam;
+use FireflyIII\Support\Http\Api\ApiSupport;
+use FireflyIII\Support\Http\Api\CleansChartData;
+use FireflyIII\Support\Http\Api\CollectsAccountsFromFilter;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
+
+/**
+ * Class AccountController
+ */
+final class AccountController extends Controller
+{
+    use ApiSupport;
+    use CleansChartData;
+    use CollectsAccountsFromFilter;
+
+    protected array $acceptedRoles = [UserRoleEnum::READ_ONLY];
+
+    private array $chartData       = [];
+    private AccountRepositoryInterface $repository;
+
+    /**
+     * AccountController constructor.
+     */
+    public function __construct()
+    {
+        parent::__construct();
+        $this->middleware(function (Request $request, $next) {
+            $this->repository = app(AccountRepositoryInterface::class);
+            $this->validateUserGroup($request);
+            $this->repository->setUserGroup($this->userGroup);
+            $this->repository->setUser($this->user);
+
+            return $next($request);
+        });
+    }
+
+    /**
+     * @throws FireflyException
+     */
+    public function overview(ChartRequest $request): JsonResponse
+    {
+        $queryParameters = $request->getParameters();
+        $accounts        = $this->getAccountList($queryParameters);
+
+        // move date to end of day
+        $queryParameters['start']->startOfDay();
+        $queryParameters['end']->endOfDay();
+        // Log::debug(sprintf('dashboard(), convert to primary: %s', var_export($this->convertToPrimary, true)));
+
+        // loop each account, and collect info:
+        /** @var Account $account */
+        foreach ($accounts as $account) {
+            Log::debug(sprintf('Account #%d ("%s")', $account->id, $account->name));
+            $this->renderAccountData($queryParameters, $account);
+        }
+
+        return response()->json($this->clean($this->chartData));
+    }
+
+    /**
+     * @throws FireflyException
+     */
+    private function renderAccountData(array $params, Account $account): void
+    {
+        Log::debug(sprintf('Now in %s(array, #%d)', __METHOD__, $account->id));
+        $currency          = $this->repository->getAccountCurrency($account);
+        $currentStart      = clone $params['start'];
+        $range             = Steam::finalAccountBalanceInRange($account, $params['start'], clone $params['end'], $this->convertToPrimary);
+        $period            = $params['period'] ?? '1D';
+
+        $previous          = array_values($range)[0]['balance'];
+        $pcPrevious        = null;
+        if (!$currency instanceof TransactionCurrency) {
+            $currency = $this->primaryCurrency;
+        }
+        $currentSet        = [
+            'label'                   => $account->name,
+
+            // the currency that belongs to the account.
+            'currency_id'             => (string) $currency->id,
+            'currency_name'           => $currency->name,
+            'currency_code'           => $currency->code,
+            'currency_symbol'         => $currency->symbol,
+            'currency_decimal_places' => $currency->decimal_places,
+
+            // the primary currency
+            'primary_currency_id'     => (string) $this->primaryCurrency->id,
+
+            // the default currency of the user (could be the same!)
+            'date'                    => $params['start']->toAtomString(),
+            'start_date'              => $params['start']->toAtomString(),
+            'end_date'                => $params['end']->toAtomString(),
+            'type'                    => 'line',
+            'yAxisID'                 => 0,
+            'period'                  => $period,
+            'entries'                 => [],
+            'pc_entries'              => [],
+        ];
+        if ($this->convertToPrimary) {
+            $currentSet['pc_entries']                      = [];
+            $currentSet['primary_currency_id']             = (string) $this->primaryCurrency->id;
+            $currentSet['primary_currency_code']           = $this->primaryCurrency->code;
+            $currentSet['primary_currency_symbol']         = $this->primaryCurrency->symbol;
+            $currentSet['primary_currency_decimal_places'] = $this->primaryCurrency->decimal_places;
+            $pcPrevious                                    = array_values($range)[0]['pc_balance'];
+        }
+        // create array of values to collect.
+
+        $rangeDates        = array_map(static fn (string $d): Carbon => Carbon::createFromFormat('Y-m-d', $d)->startOfDay(), array_keys($range));
+        $rangeVals         = array_values($range);
+        $rangeIdx          = 0;
+        $rangeCount        = count($rangeDates);
+
+        while ($currentStart <= $params['end']) {
+            $label                         = $currentStart->toAtomString();
+
+            // Advance through all range entries up to current chart date
+            while ($rangeIdx < $rangeCount && $rangeDates[$rangeIdx] <= $currentStart) {
+                $previous = $rangeVals[$rangeIdx]['balance'];
+                if ($this->convertToPrimary) {
+                    $pcPrevious = $rangeVals[$rangeIdx]['pc_balance'];
+                }
+                ++$rangeIdx;
+            }
+
+            $currentSet['entries'][$label] = $previous;
+            if ($this->convertToPrimary) {
+                $currentSet['pc_entries'][$label] = $pcPrevious;
+            }
+
+            $currentStart                  = Navigation::addPeriod($currentStart, $period);
+        }
+        $this->chartData[] = $currentSet;
+    }
+}

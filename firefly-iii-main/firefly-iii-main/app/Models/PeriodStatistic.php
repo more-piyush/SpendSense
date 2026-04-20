@@ -1,0 +1,58 @@
+<?php
+
+declare(strict_types=1);
+
+namespace FireflyIII\Models;
+
+use Carbon\Carbon;
+use FireflyIII\Casts\SeparateTimezoneCaster;
+use FireflyIII\Support\Models\ReturnsIntegerUserIdTrait;
+use Illuminate\Database\Eloquent\Casts\Attribute;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\MorphTo;
+
+/**
+ * @property Carbon $start
+ * @property Carbon $end
+ * @property string $amount
+ */
+class PeriodStatistic extends Model
+{
+    use ReturnsIntegerUserIdTrait;
+
+    public function primaryStatable(): MorphTo
+    {
+        return $this->morphTo();
+    }
+
+    public function secondaryStatable(): MorphTo
+    {
+        return $this->morphTo();
+    }
+
+    public function tertiaryStatable(): MorphTo
+    {
+        return $this->morphTo();
+    }
+
+    public function userGroup(): BelongsTo
+    {
+        return $this->belongsTo(UserGroup::class);
+    }
+
+    protected function casts(): array
+    {
+        return [
+            'created_at' => 'datetime',
+            'updated_at' => 'datetime',
+            'start'      => SeparateTimezoneCaster::class,
+            'end'        => SeparateTimezoneCaster::class,
+        ];
+    }
+
+    protected function count(): Attribute
+    {
+        return Attribute::make(get: static fn ($value): int => (int) $value);
+    }
+}
