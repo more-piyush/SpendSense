@@ -1,6 +1,7 @@
 locals {
-  control_plane_name = "${var.cluster_name}-cp-1"
-  worker_names       = [for i in range(var.worker_count) : format("%s-worker-%02d", var.cluster_name, i + 1)]
+  control_plane_name         = "${var.cluster_name}-cp-1"
+  worker_names               = [for i in range(var.worker_count) : format("%s-worker-%02d", var.cluster_name, i + 1)]
+  effective_floating_ip_pool = var.floating_ip_pool != "" ? var.floating_ip_pool : var.external_network_name
 }
 
 resource "openstack_networking_network_v2" "cluster" {
@@ -116,10 +117,19 @@ resource "openstack_compute_instance_v2" "control_plane" {
   network {
     uuid = openstack_networking_network_v2.cluster.id
   }
+
+  dynamic "scheduler_hints" {
+    for_each = var.reservation_id != "" ? [1] : []
+    content {
+      additional_properties = {
+        reservation = var.reservation_id
+      }
+    }
+  }
 }
 
 resource "openstack_networking_floatingip_v2" "control_plane" {
-  pool = var.floating_ip_pool
+  pool = local.effective_floating_ip_pool
 }
 
 resource "openstack_compute_floatingip_associate_v2" "control_plane" {
@@ -138,11 +148,20 @@ resource "openstack_compute_instance_v2" "workers" {
   network {
     uuid = openstack_networking_network_v2.cluster.id
   }
+
+  dynamic "scheduler_hints" {
+    for_each = var.reservation_id != "" ? [1] : []
+    content {
+      additional_properties = {
+        reservation = var.reservation_id
+      }
+    }
+  }
 }
 
 resource "openstack_networking_floatingip_v2" "workers" {
   count = var.worker_count
-  pool  = var.floating_ip_pool
+  pool  = local.effective_floating_ip_pool
 }
 
 resource "openstack_compute_floatingip_associate_v2" "workers" {

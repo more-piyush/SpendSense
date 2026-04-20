@@ -42,6 +42,12 @@ variable "worker_count" {
   default     = 2
 }
 
+variable "reservation_id" {
+  description = "Existing Chameleon reservation UUID for the KVM flavor lease."
+  type        = string
+  default     = ""
+}
+
 variable "network_name" {
   description = "Private network name to create for the cluster."
   type        = string
@@ -72,8 +78,9 @@ variable "external_network_name" {
 }
 
 variable "floating_ip_pool" {
-  description = "Floating IP pool/network name for node access."
+  description = "Floating IP pool/network name for node access. Leave empty to reuse external_network_name."
   type        = string
+  default     = ""
 }
 
 variable "ssh_allowed_cidrs" {

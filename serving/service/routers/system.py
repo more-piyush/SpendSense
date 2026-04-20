@@ -15,8 +15,7 @@ def health():
 def ready():
     return {
         "status": "ready",
-        "active_categorization_model": "cat_logreg_baseline",
-        "active_trend_model": "trend_xgb_optuna",
+        "active_models_source": "active_models.json",
     }
 
 

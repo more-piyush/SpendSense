@@ -335,26 +335,118 @@ def _load_registry_entries(registry_file: str, config: dict = None) -> list:
 
 def _save_registry_entries(registry_file: str, entries: list, config: dict = None):
     """Persist registry entries in a backward-compatible structure."""
+    sanitized_entries = []
+    for entry in entries:
+        clean_entry = dict(entry)
+        clean_entry.pop("selection_state", None)
+        sanitized_entries.append(clean_entry)
+
     payload = {
-        "schema_version": 2,
+        "schema_version": 3,
         "updated_at": datetime.utcnow().isoformat(),
-        "models": entries,
+        "models": sanitized_entries,
     }
     save_json_document(registry_file, payload, config=config)
 
 
-def _ensure_active_models_file(active_models_file: str, config: dict = None):
-    """Create the active-model selection file if it does not exist yet."""
-    existing = load_json_document(active_models_file, default=None, config=config)
-    if existing is not None:
-        return
+def _default_active_models_payload() -> dict:
+    """Return the canonical active-model payload structure."""
+    return {
+        "schema_version": 2,
+        "updated_at": datetime.utcnow().isoformat(),
+        "categorization": None,
+        "trend": None,
+    }
 
-    payload = {
-        "active_categorization_model": None,
-        "active_trend_model": None,
+
+def _registry_storage_config(config: dict = None) -> dict:
+    """Build storage config for registry operations with env fallbacks."""
+    config = config or {}
+    return {
+        "s3": {
+            "endpoint_url": (
+                config.get("s3", {}).get("endpoint_url")
+                or os.environ.get("MLFLOW_S3_ENDPOINT_URL")
+            ),
+            "region": config.get("s3", {}).get("region", "us-east-1"),
+            "access_key": config.get("s3", {}).get("access_key"),
+            "secret_key": config.get("s3", {}).get("secret_key"),
+        }
+    }
+
+
+def _build_active_model_record(entry: dict) -> dict:
+    """Materialize the fields serving/retraining need for an active model."""
+    return {
+        "registry_id": entry.get("registry_id"),
+        "task_type": entry.get("task_type"),
+        "model_id": entry.get("model_id"),
+        "model_family": entry.get("model_family"),
+        "legacy_model_type": entry.get("legacy_model_type"),
+        "version": entry.get("version"),
+        "status": entry.get("status"),
+        "training_mode": entry.get("training_mode"),
+        "run_name": entry.get("run_name"),
+        "mlflow_run_id": entry.get("mlflow_run_id"),
+        "experiment_name": entry.get("experiment_name"),
+        "artifact_path": entry.get("artifact_path"),
+        "data_path": entry.get("data_path"),
+        "training_data_hash": entry.get("training_data_hash"),
+        "feature_version": entry.get("feature_version"),
         "updated_at": datetime.utcnow().isoformat(),
     }
-    save_json_document(active_models_file, payload, config=config)
+
+
+def _resolve_registry_entry(entries: list, registry_id: str = None, model_id: str = None):
+    """Resolve a registry entry by registry_id first, then by model_id."""
+    if registry_id:
+        for entry in reversed(entries):
+            if entry.get("registry_id") == registry_id:
+                return entry
+    if model_id:
+        for entry in reversed(entries):
+            if entry.get("model_id") == model_id:
+                return entry
+    return None
+
+
+def _normalize_active_models_payload(payload, entries: list) -> dict:
+    """Migrate older active-model formats into the canonical structure."""
+    if not isinstance(payload, dict):
+        return _default_active_models_payload()
+
+    if "categorization" in payload or "trend" in payload:
+        normalized = _default_active_models_payload()
+        normalized["schema_version"] = payload.get("schema_version", 2)
+        normalized["updated_at"] = payload.get("updated_at", normalized["updated_at"])
+        normalized["categorization"] = payload.get("categorization")
+        normalized["trend"] = payload.get("trend")
+        return normalized
+
+    normalized = _default_active_models_payload()
+    normalized["updated_at"] = payload.get("updated_at", normalized["updated_at"])
+
+    legacy_categorization = payload.get("active_categorization_model")
+    legacy_trend = payload.get("active_trend_model")
+
+    categorization_entry = _resolve_registry_entry(entries, model_id=legacy_categorization)
+    trend_entry = _resolve_registry_entry(entries, model_id=legacy_trend)
+
+    normalized["categorization"] = (
+        _build_active_model_record(categorization_entry) if categorization_entry else None
+    )
+    normalized["trend"] = _build_active_model_record(trend_entry) if trend_entry else None
+    return normalized
+
+
+def _ensure_active_models_file(active_models_file: str, entries: list = None, config: dict = None):
+    """Create or migrate the active-model selection file."""
+    entries = entries or []
+    existing = load_json_document(active_models_file, default=None, config=config)
+    normalized = _normalize_active_models_payload(existing, entries)
+    if existing != normalized:
+        save_json_document(active_models_file, normalized, config=config)
+    return normalized
 
 
 def _infer_task_type(config: dict) -> str:
@@ -396,45 +488,75 @@ def _next_model_version(entries: list, model_id: str) -> str:
 def load_active_models(registry_path: str) -> dict:
     """Load the active-model selection JSON from the registry directory."""
     active_models_file = _registry_file_path(registry_path, "active_models.json")
-    registry_config = {"s3": {"endpoint_url": os.environ.get("MLFLOW_S3_ENDPOINT_URL"), "region": "us-east-1"}}
-    _ensure_active_models_file(active_models_file, config=registry_config)
-    return load_json_document(active_models_file, default={}, config=registry_config)
+    registry_file = _registry_file_path(registry_path, "registry.json")
+    registry_config = _registry_storage_config()
+    entries = _load_registry_entries(registry_file, config=registry_config)
+    return _ensure_active_models_file(active_models_file, entries=entries, config=registry_config)
+
+
+def get_active_model_record(registry_path: str, task_type: str, config: dict = None):
+    """Return the authoritative active model record for a task."""
+    registry_path = registry_path or "s3://mlflow/registry"
+    registry_file = _registry_file_path(registry_path, "registry.json")
+    active_models_file = _registry_file_path(registry_path, "active_models.json")
+    registry_config = _registry_storage_config(config)
+    entries = _load_registry_entries(registry_file, config=registry_config)
+    payload = _ensure_active_models_file(active_models_file, entries=entries, config=registry_config)
+    return payload.get(task_type)
+
+
+def get_active_model_artifact_path(registry_path: str, task_type: str, config: dict = None):
+    """Convenience helper to fetch the current active model artifact path for a task."""
+    record = get_active_model_record(registry_path, task_type, config=config)
+    if record is None:
+        return None
+    return record.get("artifact_path")
 
 
 def set_active_models(
     registry_path: str,
     active_categorization_model: str = None,
     active_trend_model: str = None,
+    active_categorization_registry_id: str = None,
+    active_trend_registry_id: str = None,
 ) -> dict:
     """Update active model selections for categorization and trend tasks."""
+    registry_path = registry_path or "s3://mlflow/registry"
     active_models_file = _registry_file_path(registry_path, "active_models.json")
-    current = load_active_models(registry_path)
-    registry_config = {"s3": {"endpoint_url": os.environ.get("MLFLOW_S3_ENDPOINT_URL"), "region": "us-east-1"}}
+    registry_file = _registry_file_path(registry_path, "registry.json")
+    registry_config = _registry_storage_config()
+    entries = _load_registry_entries(registry_file, config=registry_config)
+    current = _ensure_active_models_file(active_models_file, entries=entries, config=registry_config)
 
-    if active_categorization_model is not None:
-        current["active_categorization_model"] = active_categorization_model
-    if active_trend_model is not None:
-        current["active_trend_model"] = active_trend_model
+    if active_categorization_model is not None or active_categorization_registry_id is not None:
+        entry = _resolve_registry_entry(
+            entries,
+            registry_id=active_categorization_registry_id,
+            model_id=active_categorization_model,
+        )
+        if entry is None:
+            raise ValueError(
+                "Categorization selection not found in registry: "
+                f"registry_id={active_categorization_registry_id}, "
+                f"model_id={active_categorization_model}"
+            )
+        current["categorization"] = _build_active_model_record(entry)
+    if active_trend_model is not None or active_trend_registry_id is not None:
+        entry = _resolve_registry_entry(
+            entries,
+            registry_id=active_trend_registry_id,
+            model_id=active_trend_model,
+        )
+        if entry is None:
+            raise ValueError(
+                "Trend selection not found in registry: "
+                f"registry_id={active_trend_registry_id}, "
+                f"model_id={active_trend_model}"
+            )
+        current["trend"] = _build_active_model_record(entry)
 
     current["updated_at"] = datetime.utcnow().isoformat()
     save_json_document(active_models_file, current, config=registry_config)
-
-    registry_file = _registry_file_path(registry_path, "registry.json")
-    entries = _load_registry_entries(registry_file, config=registry_config)
-    for entry in entries:
-        task_type = entry.get("task_type")
-        if task_type == "categorization":
-            active_model_id = current["active_categorization_model"]
-        elif task_type == "trend":
-            active_model_id = current["active_trend_model"]
-        else:
-            active_model_id = None
-
-        entry["selection_state"] = (
-            "active" if active_model_id and entry.get("model_id") == active_model_id else "inactive"
-        )
-        entry["updated_at"] = datetime.utcnow().isoformat()
-    _save_registry_entries(registry_file, entries, config=registry_config)
 
     print(f"[REGISTRY] Active models updated: {json.dumps(current, indent=2)}")
     return current
@@ -541,59 +663,26 @@ def update_active_model_selection(registry_path: str, config: dict = None) -> di
     registry_file = _registry_file_path(registry_path, "registry.json")
     active_models_file = _registry_file_path(registry_path, "active_models.json")
     config = config or {}
-    registry_config = {
-        "s3": {
-            "endpoint_url": (
-                config.get("s3", {}).get("endpoint_url")
-                or os.environ.get("MLFLOW_S3_ENDPOINT_URL")
-            ),
-            "region": config.get("s3", {}).get("region", "us-east-1"),
-            "access_key": config.get("s3", {}).get("access_key"),
-            "secret_key": config.get("s3", {}).get("secret_key"),
-        }
-    }
+    registry_config = _registry_storage_config(config)
 
     entries = _load_registry_entries(registry_file, config=registry_config)
-    current = load_json_document(
-        active_models_file,
-        default={
-            "active_categorization_model": None,
-            "active_trend_model": None,
-            "updated_at": datetime.utcnow().isoformat(),
-        },
-        config=registry_config,
-    )
+    current = _ensure_active_models_file(active_models_file, entries=entries, config=registry_config)
 
     best_categorization = _choose_best_candidate(entries, "categorization")
     best_trend = _choose_best_candidate(entries, "trend")
 
-    current["active_categorization_model"] = (
-        best_categorization.get("model_id") if best_categorization else None
+    current["categorization"] = (
+        _build_active_model_record(best_categorization) if best_categorization else None
     )
-    current["active_trend_model"] = best_trend.get("model_id") if best_trend else None
+    current["trend"] = _build_active_model_record(best_trend) if best_trend else None
     current["updated_at"] = datetime.utcnow().isoformat()
 
-    for entry in entries:
-        task_type = entry.get("task_type")
-        if task_type == "categorization":
-            active_model_id = current["active_categorization_model"]
-        elif task_type == "trend":
-            active_model_id = current["active_trend_model"]
-        else:
-            active_model_id = None
-
-        entry["selection_state"] = (
-            "active" if active_model_id and entry.get("model_id") == active_model_id else "inactive"
-        )
-        entry["updated_at"] = datetime.utcnow().isoformat()
-
     save_json_document(active_models_file, current, config=registry_config)
-    _save_registry_entries(registry_file, entries, config=registry_config)
 
     print(
         "[REGISTRY] Auto-selected active models: "
-        f"categorization={current['active_categorization_model']}, "
-        f"trend={current['active_trend_model']}"
+        f"categorization={current['categorization']['model_id'] if current['categorization'] else None}, "
+        f"trend={current['trend']['model_id'] if current['trend'] else None}"
     )
     return current
 
@@ -604,9 +693,8 @@ def register_candidate_model(config: dict, run_id: str, metrics: dict) -> dict:
 
     registry_file = _registry_file_path(registry_path, "registry.json")
     active_models_file = _registry_file_path(registry_path, "active_models.json")
-    _ensure_active_models_file(active_models_file, config=config)
-
     entries = _load_registry_entries(registry_file, config=config)
+    _ensure_active_models_file(active_models_file, entries=entries, config=config)
     for entry in entries:
         if entry.get("mlflow_run_id") == run_id:
             print(f"[REGISTRY] Run {run_id} already registered as {entry.get('model_id')}")
@@ -655,7 +743,6 @@ def register_candidate_model(config: dict, run_id: str, metrics: dict) -> dict:
         "feature_version": hyperparameters.get("feature_version", "1.0"),
         "hyperparameters": hyperparameters,
         "eval_metrics": metrics,
-        "selection_state": "inactive",
         "created_at": datetime.utcnow().isoformat(),
         "updated_at": datetime.utcnow().isoformat(),
     }

@@ -31,6 +31,7 @@ ansible-playbook argocd/site.yml
 - `worker_flavor`
 - `external_network_name`
 - `floating_ip_pool`
+- `reservation_id`
 - `keypair_name`
 - `k3s_token` in `group_vars/all.yml`
 

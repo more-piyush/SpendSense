@@ -17,3 +17,8 @@ output "ansible_inventory_path" {
   value       = local_file.ansible_inventory.filename
   description = "Path to the generated Ansible inventory file."
 }
+
+output "floating_ip_pool_used" {
+  value       = local.effective_floating_ip_pool
+  description = "Floating IP pool Terraform used for allocating floating IPs."
+}

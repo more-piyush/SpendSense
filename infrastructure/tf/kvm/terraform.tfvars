@@ -1,16 +1,16 @@
-openstack_cloud       = "openstack"
-cluster_name          = "spendsense"
-keypair_name          = "REPLACE_WITH_CHAMELEON_KEYPAIR"
-ssh_user              = "cc"
+openstack_cloud = "openstack"
+cluster_name    = "spendsense"
+keypair_name    = "REPLACE_WITH_CHAMELEON_KEYPAIR"
+ssh_user        = "cc"
 
 # Fill only these Chameleon-specific placeholders.
-image_name            = "REPLACE_WITH_IMAGE_NAME"
-control_plane_flavor  = "REPLACE_WITH_CONTROL_PLANE_FLAVOR"
-worker_flavor         = "REPLACE_WITH_WORKER_FLAVOR"
-external_network_name = "REPLACE_WITH_EXTERNAL_NETWORK"
-reservation_id        = "REPLACE_WITH_EXISTING_RESERVATION_UUID"
+image_name            = "CC-Ubuntu24.04"
+control_plane_flavor  = "m1.large"
+worker_flavor         = "m1.large"
+external_network_name = "REPLACE_WITH_ACTUAL_EXTERNAL_NETWORK"
+reservation_id        = "8b675bdd-33eb-4288-8a5d-bfa3959add5a"
 
-worker_count = 2
+worker_count = 0
 
 # Optional. If omitted, Terraform uses external_network_name as the floating IP pool.
 # floating_ip_pool = "REPLACE_WITH_FLOATING_IP_POOL"

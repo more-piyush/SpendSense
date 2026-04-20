@@ -45,6 +45,7 @@ For the simplest setup, only change:
 - `worker_flavor`
 - `external_network_name`
 - `floating_ip_pool`
+- `reservation_id`
 - `k3s_token`
 
 ## Included components
