@@ -8,7 +8,7 @@ data:
   APP_DEBUG: "false"
   SITE_OWNER: "devops@example.com"
   APP_URL: "http://<FLOATING_IP>:30080"
-  SESSION_DRIVER: "file"
+  SESSION_DRIVER: "database"
   COOKIE_PATH: "/"
   COOKIE_SECURE: "false"
   COOKIE_SAMESITE: "lax"
