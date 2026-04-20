@@ -1,0 +1,60 @@
+# Minimal monitoring profile for the SpendSense K3s deployment.
+# Install with:
+#   helm upgrade --install monitoring prometheus-community/kube-prometheus-stack \
+#     -n monitoring -f infrastructure/k8s/monitoring/kube-prometheus-stack-values.yaml
+
+fullnameOverride: monitoring
+
+defaultRules:
+  create: true
+  rules:
+    etcd: false
+    kubeControllerManager: false
+    kubeSchedulerAlerting: false
+    kubeSchedulerRecording: false
+
+grafana:
+  enabled: true
+  defaultDashboardsEnabled: true
+  adminPassword: "admin123-change-me"
+  service:
+    type: NodePort
+    nodePort: 30300
+  persistence:
+    enabled: false
+
+alertmanager:
+  enabled: true
+  service:
+    type: ClusterIP
+
+prometheus:
+  service:
+    type: ClusterIP
+  prometheusSpec:
+    retention: 7d
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    probeSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    resources:
+      requests:
+        cpu: 250m
+        memory: 1Gi
+      limits:
+        cpu: "1"
+        memory: 2Gi
+    storageSpec: {}
+
+kubeEtcd:
+  enabled: false
+
+kubeControllerManager:
+  enabled: false
+
+kubeScheduler:
+  enabled: false
+
+prometheus-node-exporter:
+  hostRootFsMount:
+    enabled: true

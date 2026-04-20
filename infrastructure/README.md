@@ -108,6 +108,17 @@ Serving currently uses: `spendsense/serving-unified:latest`.
 The unified serving stack loads the active MLflow artifacts from `active_models.json`;
 the older ONNX example images under `Serving/` are not used by the production deployment.
 
+## Monitoring
+
+Deploy the monitoring stack after the core platform is running:
+
+```bash
+./scripts/deploy-monitoring.sh
+./scripts/validate-monitoring.sh
+```
+
+Grafana is exposed on NodePort `30300` by default.
+
 ## Teardown
 
 ```bash
