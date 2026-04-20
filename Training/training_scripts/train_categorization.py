@@ -32,6 +32,7 @@ from transformers import (
 )
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
+from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import MultiLabelBinarizer
 from sklearn.metrics import (
     accuracy_score,
@@ -383,7 +384,13 @@ def train_baseline(config, train_df, val_df, test_df, label_binarizer):
     }
 
     mlflow.log_metrics(metrics)
-    model_info = mlflow.sklearn.log_model(clf, "model")
+    serving_pipeline = Pipeline(
+        [
+            ("tfidf", tfidf),
+            ("clf", clf),
+        ]
+    )
+    model_info = mlflow.sklearn.log_model(serving_pipeline, "model")
     tag_primary_model_artifact(model_info)
     mlflow.log_artifact(config["_config_path"])
 
@@ -624,6 +631,7 @@ def train_distilbert(config, train_df, val_df, test_df, label_binarizer,
     import tempfile
     with tempfile.TemporaryDirectory() as tmpdir:
         model_path = os.path.join(tmpdir, "model.pt")
+        tokenizer_path = os.path.join(tmpdir, "tokenizer")
         torch.save({
             "model_state_dict": model.state_dict(),
             "config": {k: v for k, v in config.items() if not k.startswith("_")},
@@ -632,7 +640,11 @@ def train_distilbert(config, train_df, val_df, test_df, label_binarizer,
             "currency_vocab": currency_vocab,
             "country_vocab": country_vocab,
         }, model_path)
-        artifacts = {"model_path": model_path}
+        tokenizer.save_pretrained(tokenizer_path)
+        artifacts = {
+            "model_path": model_path,
+            "tokenizer_path": tokenizer_path,
+        }
         model_info = mlflow.pyfunc.log_model(
             artifact_path="model",
             python_model=mlflow.pyfunc.PythonModel(),

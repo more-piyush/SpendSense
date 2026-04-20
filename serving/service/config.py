@@ -12,6 +12,8 @@ class Settings:
     local_artifact_root: Path
     s3_endpoint_url: str | None
     s3_region: str
+    production_logs_bucket: str
+    production_logs_prefix: str
     categorization_threshold: float
     categorization_abstention_threshold: float
     trend_anomaly_threshold: float
@@ -33,6 +35,8 @@ def load_settings() -> Settings:
         ),
         s3_endpoint_url=os.getenv("S3_ENDPOINT_URL") or os.getenv("MLFLOW_S3_ENDPOINT_URL"),
         s3_region=os.getenv("AWS_REGION", "us-east-1"),
+        production_logs_bucket=os.getenv("PRODUCTION_LOGS_BUCKET", "production-logs"),
+        production_logs_prefix=os.getenv("PRODUCTION_LOGS_PREFIX", "serving"),
         categorization_threshold=float(os.getenv("CATEGORIZATION_THRESHOLD", "0.5")),
         categorization_abstention_threshold=float(
             os.getenv("CATEGORIZATION_ABSTENTION_THRESHOLD", "0.7")

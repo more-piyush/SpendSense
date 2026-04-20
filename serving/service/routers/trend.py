@@ -3,10 +3,16 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends
 
-from service.dependencies import get_metrics_registry, get_model_manager, get_settings
+from service.dependencies import (
+    get_feedback_store,
+    get_metrics_registry,
+    get_model_manager,
+    get_settings,
+)
 from service.metrics import MetricsRegistry
 from service.model_loader import ModelManager
 from service.schemas import TrendAnomalyDetection, TrendAnalysis, TrendInput, TrendResponse
+from service.storage import EventStore
 
 router = APIRouter(prefix="/predict", tags=["prediction"])
 
@@ -17,6 +23,7 @@ def predict_trend(
     manager: ModelManager = Depends(get_model_manager),
     metrics: MetricsRegistry = Depends(get_metrics_registry),
     settings=Depends(get_settings),
+    store: EventStore = Depends(get_feedback_store),
 ) -> TrendResponse:
     started = time.perf_counter()
 
@@ -44,7 +51,7 @@ def predict_trend(
     )
 
     active = manager.get_active_models()["trend"]
-    return TrendResponse(
+    response = TrendResponse(
         user_id=payload.user_id,
         category=payload.category,
         period=payload.period,
@@ -56,3 +63,18 @@ def predict_trend(
         inference_time_ms=latency_ms,
         timestamp=datetime.now(timezone.utc).isoformat(),
     )
+    store.write(
+        {
+            "task": "trend_detection",
+            "request": payload.model_dump(),
+            "active_model": {
+                "registry_id": active["registry_id"],
+                "model_id": active["model_id"],
+                "model_family": active["model_family"],
+                "version": active["version"],
+            },
+            "response": response.model_dump(),
+        },
+        event_type="interactions/trend",
+    )
+    return response

@@ -3,6 +3,7 @@
 import argparse
 import json
 
+from export_serving_artifacts import materialize_active_serving_artifacts
 from utils import load_active_models, set_active_models, update_active_model_selection
 
 
@@ -50,6 +51,7 @@ def main():
             active_categorization_registry_id=args.active_categorization_registry_id,
             active_trend_registry_id=args.active_trend_registry_id,
         )
+    updated = materialize_active_serving_artifacts(args.registry_path)
     print(json.dumps(updated, indent=2))
     print(json.dumps(load_active_models(args.registry_path), indent=2))
 

@@ -5,7 +5,7 @@ model_type: XGBOOST_TREND
 
 # Feedback collection
 feedback_source: file
-feedback_path: /data/feedback/trend_feedback.parquet
+feedback_path: s3://production-logs/serving/feedback/trend_detection/
 
 # Trigger settings
 schedule: monthly

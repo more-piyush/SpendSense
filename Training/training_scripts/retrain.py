@@ -32,6 +32,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import yaml
+import boto3
 
 try:
     import mlflow
@@ -156,7 +157,16 @@ def _collect_feedback_from_db(config: dict, model_type: str) -> pd.DataFrame:
 def _collect_feedback_from_file(config: dict, model_type: str) -> pd.DataFrame:
     """Load feedback from a file (for testing/offline)."""
     path = config.get("feedback_path")
-    if not path or not os.path.exists(path):
+    if not path:
+        print(f"[FEEDBACK] No feedback file configured")
+        return pd.DataFrame()
+
+    if path.startswith("s3://"):
+        records = _load_feedback_records_from_s3(path, config, model_type)
+        print(f"[FEEDBACK] Loaded {len(records)} {model_type} feedback records from {path}")
+        return pd.DataFrame(records)
+
+    if not os.path.exists(path):
         print(f"[FEEDBACK] No feedback file found at {path}")
         return pd.DataFrame()
 
@@ -167,6 +177,112 @@ def _collect_feedback_from_file(config: dict, model_type: str) -> pd.DataFrame:
 
     print(f"[FEEDBACK] Loaded {len(df)} {model_type} feedback records from {path}")
     return df
+
+
+def _parse_s3_uri(uri: str) -> tuple[str, str]:
+    if not uri.startswith("s3://"):
+        raise ValueError(f"Expected s3:// URI, got {uri}")
+    bucket_and_key = uri[5:]
+    bucket, key = bucket_and_key.split("/", 1)
+    return bucket, key
+
+
+def _extract_primary_category(value) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, dict):
+        if "category" in value:
+            return value["category"]
+        preds = value.get("predicted_categories")
+        if isinstance(preds, list) and preds:
+            first = preds[0]
+            if isinstance(first, dict):
+                return first.get("category")
+            return first
+    return None
+
+
+def _feedback_action_to_type(action: str, model_type: str) -> str:
+    action = (action or "").lower()
+    if model_type == "categorization":
+        if action == "overridden":
+            return "override"
+        if action == "accepted":
+            return "accepted"
+        return action or "accepted"
+
+    if action in {"confirmed", "accepted"}:
+        return "helpful"
+    if action in {"rejected", "dismissed"}:
+        return "not_useful"
+    if action == "overridden":
+        return "expected"
+    return action or "helpful"
+
+
+def _normalize_feedback_event(record: dict, model_type: str) -> dict | None:
+    payload = record.get("feedback", record)
+    task = payload.get("task")
+    if model_type == "categorization" and task != "categorization":
+        return None
+    if model_type == "trend" and task not in {"trend", "trend_detection"}:
+        return None
+
+    action = payload.get("action", "")
+    metadata = payload.get("metadata", {}) or {}
+    predicted_value = payload.get("predicted_value", {}) or {}
+    final_value = payload.get("final_value", {}) or {}
+
+    if model_type == "categorization":
+        return {
+            "feedback_id": record.get("event_id"),
+            "user_id": payload.get("user_id"),
+            "transaction_id": payload.get("transaction_id"),
+            "description": metadata.get("description", ""),
+            "amount": metadata.get("amount", 0),
+            "predicted_category": _extract_primary_category(predicted_value),
+            "actual_category": _extract_primary_category(final_value)
+            or _extract_primary_category(predicted_value),
+            "feedback_type": _feedback_action_to_type(action, model_type),
+            "created_at": payload.get("timestamp") or record.get("recorded_at"),
+        }
+
+    return {
+        "feedback_id": record.get("event_id"),
+        "user_id": payload.get("user_id"),
+        "category_name": metadata.get("category") or final_value.get("category") or predicted_value.get("category"),
+        "anomaly_score": predicted_value.get("ensemble_score"),
+        "predicted_spend": predicted_value.get("predicted_next_month_spend"),
+        "actual_spend": final_value.get("actual_spend"),
+        "feedback_type": _feedback_action_to_type(action, model_type),
+        "created_at": payload.get("timestamp") or record.get("recorded_at"),
+    }
+
+
+def _load_feedback_records_from_s3(path: str, config: dict, model_type: str) -> list[dict]:
+    bucket, prefix = _parse_s3_uri(path.rstrip("/"))
+    s3_cfg = config.get("s3", {})
+    client = boto3.client(
+        "s3",
+        endpoint_url=s3_cfg.get("endpoint_url") or os.environ.get("MLFLOW_S3_ENDPOINT_URL"),
+        aws_access_key_id=s3_cfg.get("access_key") or os.environ.get("AWS_ACCESS_KEY_ID"),
+        aws_secret_access_key=s3_cfg.get("secret_key") or os.environ.get("AWS_SECRET_ACCESS_KEY"),
+        region_name=s3_cfg.get("region", "us-east-1"),
+    )
+
+    paginator = client.get_paginator("list_objects_v2")
+    rows = []
+    for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+        for obj in page.get("Contents", []):
+            key = obj["Key"]
+            if not key.endswith(".json"):
+                continue
+            body = client.get_object(Bucket=bucket, Key=key)["Body"].read()
+            raw = json.loads(body.decode("utf-8"))
+            normalized = _normalize_feedback_event(raw, model_type)
+            if normalized is not None:
+                rows.append(normalized)
+    return rows
 
 
 # ============================================================

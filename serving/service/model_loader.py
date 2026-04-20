@@ -8,6 +8,7 @@ import boto3
 import mlflow.sklearn
 import mlflow.xgboost
 import numpy as np
+import onnxruntime as ort
 import torch
 import torch.nn as nn
 from sklearn.ensemble import IsolationForest
@@ -168,12 +169,88 @@ class ModelManager:
             return candidate
         raise FileNotFoundError(f"Unable to locate model.pt under {artifact_dir}")
 
+    def _load_json_file(self, path: Path) -> Dict[str, Any]:
+        return json.loads(path.read_text(encoding="utf-8"))
+
+    def _load_onnx_session(self, model_path: Path) -> ort.InferenceSession:
+        return ort.InferenceSession(
+            str(model_path),
+            providers=["CPUExecutionProvider"],
+        )
+
+    def _resolve_serving_artifact_dir(self, record: Dict[str, Any]) -> Path | None:
+        serving_artifacts = record.get("serving_artifacts", {})
+        root_path = serving_artifacts.get("root_path")
+        if not root_path:
+            return None
+        return self._materialize_artifact(root_path)
+
+    def _extract_onnx_scalar(self, raw_output: Any) -> float:
+        array = np.asarray(raw_output)
+        if array.dtype == object:
+            array = np.asarray(list(array), dtype=np.float32)
+        return float(array.reshape(-1)[0])
+
+    def _load_categorization_onnx(self, record: Dict[str, Any]):
+        artifact_dir = self._resolve_serving_artifact_dir(record)
+        if artifact_dir is None:
+            raise FileNotFoundError("Categorization ONNX artifact root is not configured")
+
+        serving_artifacts = record.get("serving_artifacts", {})
+        model_name = serving_artifacts.get("onnx_quantized_model") or serving_artifacts.get("onnx_model")
+        metadata_name = serving_artifacts.get("metadata", "metadata.json")
+        tokenizer_dir_name = serving_artifacts.get("tokenizer_dir", "tokenizer")
+
+        metadata = self._load_json_file(artifact_dir / metadata_name)
+        tokenizer = DistilBertTokenizer.from_pretrained(str(artifact_dir / tokenizer_dir_name))
+        session = self._load_onnx_session(artifact_dir / model_name)
+
+        return session, {
+            "format": serving_artifacts.get("preferred_format", "onnx_quantized"),
+            "classes": metadata.get("classes", []),
+            "tokenizer": tokenizer,
+            "max_length": int(metadata.get("max_length", 64)),
+            "currency_vocab": metadata.get("currency_vocab", {}),
+            "country_vocab": metadata.get("country_vocab", {}),
+        }
+
+    def _load_trend_onnx(self, record: Dict[str, Any]):
+        artifact_dir = self._resolve_serving_artifact_dir(record)
+        if artifact_dir is None:
+            raise FileNotFoundError("Trend ONNX artifact root is not configured")
+
+        serving_artifacts = record.get("serving_artifacts", {})
+        metadata = self._load_json_file(artifact_dir / serving_artifacts.get("metadata", "metadata.json"))
+        session = self._load_onnx_session(artifact_dir / serving_artifacts.get("onnx_model", "model.onnx"))
+
+        isolation_forest = None
+        iso_artifact_path = self._derive_isolation_forest_path(record["artifact_path"])
+        if iso_artifact_path is not None:
+            try:
+                iso_dir = self._materialize_artifact(iso_artifact_path)
+                isolation_forest = mlflow.sklearn.load_model(str(iso_dir))
+            except FileNotFoundError:
+                isolation_forest = None
+
+        return session, {
+            "format": serving_artifacts.get("preferred_format", "onnx"),
+            "metadata": metadata,
+            "isolation_forest": isolation_forest,
+        }
+
     def _derive_isolation_forest_path(self, artifact_path: str) -> str | None:
         if not artifact_path.startswith("s3://") or not artifact_path.endswith("/model"):
             return None
         return artifact_path[: -len("/model")] + "/isolation_forest_model"
 
     def _load_categorization_model(self, record: Dict[str, Any]):
+        serving_artifacts = record.get("serving_artifacts", {})
+        if serving_artifacts.get("preferred_format") == "onnx_quantized":
+            try:
+                return self._load_categorization_onnx(record)
+            except Exception:
+                pass
+
         artifact_dir = self._materialize_artifact(record["artifact_path"])
         family = record.get("model_family")
 
@@ -212,6 +289,13 @@ class ModelManager:
         raise ValueError(f"Unsupported categorization model_family: {family}")
 
     def _load_trend_model(self, record: Dict[str, Any]):
+        serving_artifacts = record.get("serving_artifacts", {})
+        if serving_artifacts.get("preferred_format") == "onnx":
+            try:
+                return self._load_trend_onnx(record)
+            except Exception:
+                pass
+
         artifact_dir = self._materialize_artifact(record["artifact_path"])
         family = record.get("model_family")
 
@@ -255,6 +339,7 @@ class ModelManager:
     ) -> Tuple[List[Dict[str, float]], float]:
         record = self.active_models["categorization"]
         family = record["model_family"]
+        serving_format = self.categorization_bundle.get("format")
 
         if family == "logistic_regression":
             probabilities = self.categorization_model.predict_proba([text])[0]
@@ -270,6 +355,40 @@ class ModelManager:
                 if item["confidence"] >= self.settings.categorization_threshold
             ]
             return filtered[:5], float(pairs[0]["confidence"])
+
+        if serving_format == "onnx_quantized":
+            tokenizer = self.categorization_bundle["tokenizer"]
+            encoded = tokenizer(
+                [text],
+                return_tensors="np",
+                padding=True,
+                truncation=True,
+                max_length=self.categorization_bundle["max_length"],
+            )
+            currency_vocab = self.categorization_bundle.get("currency_vocab", {})
+            country_vocab = self.categorization_bundle.get("country_vocab", {})
+            inputs = {
+                "input_ids": encoded["input_ids"].astype(np.int64),
+                "attention_mask": encoded["attention_mask"].astype(np.int64),
+                "amount": np.array([math.log1p(max(amount, 0.0))], dtype=np.float32),
+                "currency_idx": np.array([int(currency_vocab.get(currency or "", 0))], dtype=np.int64),
+                "country_idx": np.array([int(country_vocab.get(country or "", 0))], dtype=np.int64),
+            }
+            logits = np.asarray(self.categorization_model.run(None, inputs)[0], dtype=np.float32)[0]
+            probabilities = 1.0 / (1.0 + np.exp(-logits))
+            classes = self.categorization_bundle["classes"]
+            pairs = [
+                {"category": category, "confidence": float(score)}
+                for category, score in zip(classes, probabilities)
+            ]
+            pairs.sort(key=lambda item: item["confidence"], reverse=True)
+            filtered = [
+                item
+                for item in pairs
+                if item["confidence"] >= self.settings.categorization_threshold
+            ]
+            max_confidence = float(pairs[0]["confidence"]) if pairs else 0.0
+            return filtered[:5], max_confidence
 
         tokenizer = self.categorization_bundle["tokenizer"]
         classes = self.categorization_bundle["classes"]
@@ -324,7 +443,12 @@ class ModelManager:
             [[float(features.get(column, 0.0)) for column in TREND_FEATURE_COLUMNS]],
             dtype=np.float32,
         )
-        predicted = float(self.trend_model.predict(ordered)[0])
+        if self.trend_bundle.get("format") == "onnx":
+            predicted = self._extract_onnx_scalar(
+                self.trend_model.run(None, {"features": ordered})[0]
+            )
+        else:
+            predicted = float(self.trend_model.predict(ordered)[0])
         current_spend = float(features.get("current_spend", 0.0))
         rolling_mean_3m = float(features.get("rolling_mean_3m", current_spend))
 

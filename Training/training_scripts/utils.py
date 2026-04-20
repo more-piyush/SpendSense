@@ -393,6 +393,7 @@ def _build_active_model_record(entry: dict) -> dict:
         "data_path": entry.get("data_path"),
         "training_data_hash": entry.get("training_data_hash"),
         "feature_version": entry.get("feature_version"),
+        "serving_artifacts": entry.get("serving_artifacts", {}),
         "updated_at": datetime.utcnow().isoformat(),
     }
 
@@ -540,7 +541,11 @@ def set_active_models(
                 f"registry_id={active_categorization_registry_id}, "
                 f"model_id={active_categorization_model}"
             )
-        current["categorization"] = _build_active_model_record(entry)
+        updated = _build_active_model_record(entry)
+        existing = current.get("categorization") or {}
+        if existing.get("registry_id") == updated.get("registry_id") and existing.get("serving_artifacts"):
+            updated["serving_artifacts"] = existing["serving_artifacts"]
+        current["categorization"] = updated
     if active_trend_model is not None or active_trend_registry_id is not None:
         entry = _resolve_registry_entry(
             entries,
@@ -553,7 +558,11 @@ def set_active_models(
                 f"registry_id={active_trend_registry_id}, "
                 f"model_id={active_trend_model}"
             )
-        current["trend"] = _build_active_model_record(entry)
+        updated = _build_active_model_record(entry)
+        existing = current.get("trend") or {}
+        if existing.get("registry_id") == updated.get("registry_id") and existing.get("serving_artifacts"):
+            updated["serving_artifacts"] = existing["serving_artifacts"]
+        current["trend"] = updated
 
     current["updated_at"] = datetime.utcnow().isoformat()
     save_json_document(active_models_file, current, config=registry_config)
@@ -671,10 +680,29 @@ def update_active_model_selection(registry_path: str, config: dict = None) -> di
     best_categorization = _choose_best_candidate(entries, "categorization")
     best_trend = _choose_best_candidate(entries, "trend")
 
-    current["categorization"] = (
+    next_categorization = (
         _build_active_model_record(best_categorization) if best_categorization else None
     )
-    current["trend"] = _build_active_model_record(best_trend) if best_trend else None
+    next_trend = _build_active_model_record(best_trend) if best_trend else None
+
+    existing_categorization = current.get("categorization") or {}
+    if (
+        next_categorization
+        and existing_categorization.get("registry_id") == next_categorization.get("registry_id")
+        and existing_categorization.get("serving_artifacts")
+    ):
+        next_categorization["serving_artifacts"] = existing_categorization["serving_artifacts"]
+
+    existing_trend = current.get("trend") or {}
+    if (
+        next_trend
+        and existing_trend.get("registry_id") == next_trend.get("registry_id")
+        and existing_trend.get("serving_artifacts")
+    ):
+        next_trend["serving_artifacts"] = existing_trend["serving_artifacts"]
+
+    current["categorization"] = next_categorization
+    current["trend"] = next_trend
     current["updated_at"] = datetime.utcnow().isoformat()
 
     save_json_document(active_models_file, current, config=registry_config)

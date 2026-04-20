@@ -3,10 +3,16 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends
 
-from service.dependencies import get_metrics_registry, get_model_manager, get_settings
+from service.dependencies import (
+    get_feedback_store,
+    get_metrics_registry,
+    get_model_manager,
+    get_settings,
+)
 from service.metrics import MetricsRegistry
 from service.model_loader import ModelManager
 from service.schemas import CategorizationResponse, CategoryPrediction, TransactionInput
+from service.storage import EventStore
 
 router = APIRouter(prefix="/predict", tags=["prediction"])
 
@@ -17,6 +23,7 @@ def predict_categorization(
     manager: ModelManager = Depends(get_model_manager),
     metrics: MetricsRegistry = Depends(get_metrics_registry),
     settings=Depends(get_settings),
+    store: EventStore = Depends(get_feedback_store),
 ) -> CategorizationResponse:
     started = time.perf_counter()
 
@@ -36,7 +43,7 @@ def predict_categorization(
     metrics.record_prediction("categorization", latency_ms, abstained)
 
     active = manager.get_active_models()["categorization"]
-    return CategorizationResponse(
+    response = CategorizationResponse(
         transaction_id=tx.transaction_id,
         model_family=active["model_family"],
         model_version=active["version"],
@@ -47,3 +54,18 @@ def predict_categorization(
         inference_time_ms=latency_ms,
         timestamp=datetime.now(timezone.utc).isoformat(),
     )
+    store.write(
+        {
+            "task": "categorization",
+            "transaction": tx.model_dump(),
+            "active_model": {
+                "registry_id": active["registry_id"],
+                "model_id": active["model_id"],
+                "model_family": active["model_family"],
+                "version": active["version"],
+            },
+            "response": response.model_dump(),
+        },
+        event_type="interactions/categorization",
+    )
+    return response

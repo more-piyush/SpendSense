@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends
 from service.dependencies import get_feedback_store, get_metrics_registry
 from service.metrics import MetricsRegistry
 from service.schemas import FeedbackEvent, FeedbackResponse
-from service.storage import JsonLineStore
+from service.storage import EventStore
 
 router = APIRouter(tags=["feedback"])
 
@@ -15,7 +15,7 @@ router = APIRouter(tags=["feedback"])
 def record_feedback(
     event: FeedbackEvent,
     metrics: MetricsRegistry = Depends(get_metrics_registry),
-    store: JsonLineStore = Depends(get_feedback_store),
+    store: EventStore = Depends(get_feedback_store),
 ) -> FeedbackResponse:
     event_id = f"fb_{uuid.uuid4().hex[:16]}"
     stored_timestamp = datetime.now(timezone.utc).isoformat()
@@ -26,7 +26,8 @@ def record_feedback(
             "event_id": event_id,
             "recorded_at": stored_timestamp,
             "feedback": event.model_dump(),
-        }
+        },
+        event_type=f"feedback/{event.task}",
     )
 
     return FeedbackResponse(

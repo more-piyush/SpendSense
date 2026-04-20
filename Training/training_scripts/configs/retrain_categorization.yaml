@@ -5,7 +5,7 @@ model_type: DISTILBERT_CATEGORIZATION
 
 # Feedback collection
 feedback_source: file
-feedback_path: /data/feedback/categorization_feedback.parquet
+feedback_path: s3://production-logs/serving/feedback/categorization/
 
 # Trigger settings
 schedule: weekly

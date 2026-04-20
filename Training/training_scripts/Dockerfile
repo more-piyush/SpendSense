@@ -7,11 +7,6 @@ FROM pytorch/pytorch:2.1.0-cuda12.1-cudnn8-runtime
 
 WORKDIR /app
 
-# System dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    git curl && \
-    rm -rf /var/lib/apt/lists/*
-
 # Python dependencies
 RUN pip install --no-cache-dir \
     transformers==4.36.0 \
@@ -19,6 +14,10 @@ RUN pip install --no-cache-dir \
     xgboost==2.0.3 \
     scikit-learn==1.3.2 \
     mlflow==3.9.0 \
+    onnx==1.16.1 \
+    onnxruntime==1.18.1 \
+    onnxmltools==1.12.0 \
+    skl2onnx==1.17.0 \
     optuna==3.4.0 \
     pandas==2.1.4 \
     numpy==1.26.2 \
@@ -44,6 +43,7 @@ COPY retrain.py .
 COPY explain.py .
 COPY generate_training_data.py .
 COPY set_active_models.py .
+COPY export_serving_artifacts.py .
 COPY configs/ configs/
 
 ENTRYPOINT ["python"]
