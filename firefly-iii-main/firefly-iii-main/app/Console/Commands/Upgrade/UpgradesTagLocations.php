@@ -1,0 +1,102 @@
+<?php
+
+/**
+ * MigrateTagLocations.php
+ * Copyright (c) 2020 james@firefly-iii.org
+ *
+ * This file is part of Firefly III (https://github.com/firefly-iii).
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+declare(strict_types=1);
+
+namespace FireflyIII\Console\Commands\Upgrade;
+
+use FireflyIII\Console\Commands\ShowsFriendlyMessages;
+use FireflyIII\Models\Location;
+use FireflyIII\Models\Tag;
+use FireflyIII\Support\Facades\FireflyConfig;
+use Illuminate\Console\Command;
+
+class UpgradesTagLocations extends Command
+{
+    use ShowsFriendlyMessages;
+
+    public const string CONFIG_NAME = '500_migrate_tag_locations';
+
+    protected $description          = 'Migrate tag locations.';
+
+    protected $signature            = 'upgrade:500-tag-locations {--F|force : Force the execution of this command.}';
+
+    /**
+     * Execute the console command.
+     */
+    public function handle(): int
+    {
+        if ($this->isExecuted() && true !== $this->option('force')) {
+            $this->friendlyInfo('This command has already been executed.');
+
+            return 0;
+        }
+        $this->migrateTagLocations();
+        $this->markAsExecuted();
+
+        return 0;
+    }
+
+    private function hasLocationDetails(Tag $tag): bool
+    {
+        return !in_array(null, [$tag->latitude, $tag->longitude, $tag->zoomLevel], true);
+    }
+
+    private function isExecuted(): bool
+    {
+        $configVar = FireflyConfig::get(self::CONFIG_NAME, false);
+
+        return (bool) $configVar?->data;
+    }
+
+    private function markAsExecuted(): void
+    {
+        FireflyConfig::set(self::CONFIG_NAME, true);
+    }
+
+    private function migrateLocationDetails(Tag $tag): void
+    {
+        $location             = new Location();
+        $location->longitude  = $tag->longitude;
+        $location->latitude   = $tag->latitude;
+        $location->zoom_level = $tag->zoomLevel;
+        $location->locatable()->associate($tag);
+        $location->save();
+
+        $tag->longitude       = null;
+        $tag->latitude        = null;
+        $tag->zoomLevel       = null;
+        $tag->save();
+    }
+
+    private function migrateTagLocations(): void
+    {
+        $tags = Tag::get();
+
+        /** @var Tag $tag */
+        foreach ($tags as $tag) {
+            if ($this->hasLocationDetails($tag)) {
+                $this->migrateLocationDetails($tag);
+            }
+        }
+    }
+}

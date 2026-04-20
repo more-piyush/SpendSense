@@ -1,0 +1,212 @@
+<?php
+
+/*
+ * QueryParser.php
+ * Copyright (c) 2025 https://github.com/Sobuno
+ *
+ * This file is part of Firefly III (https://github.com/firefly-iii).
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see https://www.gnu.org/licenses/.
+ */
+
+declare(strict_types=1);
+
+namespace FireflyIII\Support\Search\QueryParser;
+
+use SensitiveParameter;
+
+use function Safe\preg_split;
+
+/**
+ * Single-pass parser that processes query strings into structured nodes.
+ * Scans each character once (O(n)) to build field searches, quoted strings,
+ * prohibited terms and nested subqueries without backtracking.
+ */
+class QueryParser implements QueryParserInterface
+{
+    private int $position = 0;
+    private string $query;
+
+    public function parse(string $query): NodeGroup
+    {
+        // Log::debug(sprintf('Parsing query in QueryParser: "%s"', $query));
+        $this->query    = $query;
+        $this->position = 0;
+
+        return $this->buildNodeGroup(false);
+    }
+
+    private function buildNextNode(bool $isSubquery): NodeResult
+    {
+        $tokenUnderConstruction = '';
+        $inQuotes               = false;
+        $fieldName              = '';
+        $prohibited             = false;
+        $chrArray               = preg_split('//u', $this->query, -1, PREG_SPLIT_NO_EMPTY);
+        $count                  = count($chrArray);
+        while ($this->position < $count) {
+            $char     = $chrArray[$this->position];
+            $nextChar = $chrArray[$this->position + 1] ?? '';
+            $prevChar = $chrArray[$this->position - 1] ?? '';
+            // Log::debug(sprintf('Char #%d: %s', $this->position, $char));
+
+            // If we're in a quoted string, we treat all characters except another quote as ordinary characters
+            if ($inQuotes) {
+                if ('\\' === $char && '"' === $nextChar && '\\' !== $prevChar) {
+                    // Log::debug('Found a backslash and the next one is a double quote.');
+                    // escaped quote, pretend it's a normal char and continue two places (skipping the actual character).
+                    $tokenUnderConstruction .= '\\'.$nextChar;
+                    $this->position         += 2;
+
+                    continue;
+                }
+                if ('"' !== $char) {
+                    $tokenUnderConstruction .= $char;
+                    ++$this->position;
+
+                    continue;
+                }
+                // char is "
+                ++$this->position;
+                // Log::debug(sprintf('Constructed token: %s', $tokenUnderConstruction));
+
+                return new NodeResult($this->createNode($tokenUnderConstruction, $fieldName, $prohibited), false);
+            }
+
+            switch ($char) {
+                case '-':
+                    if ('' === $tokenUnderConstruction) {
+                        // A minus sign at the beginning of a token indicates prohibition
+                        // Log::debug('Indicate prohibition');
+                        $prohibited = true;
+                    }
+                    if ('' !== $tokenUnderConstruction) {
+                        // In any other location, it's just a normal character
+                        $tokenUnderConstruction .= $char;
+                    }
+
+                    break;
+
+                case '"':
+                    if ('' === $tokenUnderConstruction) {
+                        // A quote sign at the beginning of a token indicates the start of a quoted string
+                        $inQuotes = true;
+                    }
+                    if ('' !== $tokenUnderConstruction) {
+                        // In any other location, it's just a normal character
+                        $tokenUnderConstruction .= $char;
+                    }
+
+                    break;
+
+                case '(':
+                    if ('' === $tokenUnderConstruction) {
+                        // A left parentheses at the beginning of a token indicates the start of a subquery
+                        ++$this->position;
+
+                        return new NodeResult($this->buildNodeGroup(true, $prohibited), false);
+                    }
+                    // In any other location, it's just a normal character
+                    $tokenUnderConstruction .= $char;
+
+                    break;
+
+                case ')':
+                    // A right parentheses while in a subquery means the subquery ended,
+                    // thus also signaling the end of any node currently being built
+                    if ($isSubquery) {
+                        ++$this->position;
+
+                        return new NodeResult(
+                            '' !== $tokenUnderConstruction ? $this->createNode($tokenUnderConstruction, $fieldName, $prohibited) : null,
+                            true
+                        );
+                    }
+                    // In any other location, it's just a normal character
+                    $tokenUnderConstruction .= $char;
+
+                    break;
+
+                case ':':
+                    $skipNext = false;
+                    if ('' === $tokenUnderConstruction) {
+                        // In any other location, it's just a normal character
+                        $tokenUnderConstruction .= $char;
+                        $skipNext = true;
+                    }
+                    if ('' !== $tokenUnderConstruction && !$skipNext) {
+                        // Log::debug(sprintf('Turns out that "%s" is a field name. Reset the token.', $tokenUnderConstruction));
+                        // If we meet a colon with a left-hand side string, we know we're in a field and are about to set up the value
+                        $fieldName              = $tokenUnderConstruction;
+                        $tokenUnderConstruction = '';
+                    }
+
+                    break;
+
+                case ' ':
+                    // A space indicates the end of a token construction if non-empty, otherwise it's just ignored
+                    if ('' !== $tokenUnderConstruction) {
+                        ++$this->position;
+
+                        return new NodeResult($this->createNode($tokenUnderConstruction, $fieldName, $prohibited), false);
+                    }
+
+                    break;
+
+                default:
+                    $tokenUnderConstruction .= $char;
+            }
+
+            ++$this->position;
+        }
+
+        $finalNode              = '' !== $tokenUnderConstruction || '' !== $fieldName ? $this->createNode($tokenUnderConstruction, $fieldName, $prohibited) : null;
+
+        return new NodeResult($finalNode, true);
+    }
+
+    private function buildNodeGroup(bool $isSubquery, bool $prohibited = false): NodeGroup
+    {
+        $nodes      = [];
+        $nodeResult = $this->buildNextNode($isSubquery);
+
+        while ($nodeResult->node instanceof Node) {
+            $nodes[]    = $nodeResult->node;
+            if ($nodeResult->isSubqueryEnd) {
+                break;
+            }
+            $nodeResult = $this->buildNextNode($isSubquery);
+        }
+
+        return new NodeGroup($nodes, $prohibited);
+    }
+
+    private function createNode(#[SensitiveParameter] string $token, string $fieldName, bool $prohibited): Node
+    {
+        if ('' !== $fieldName) {
+            // OK dus hoe trim je \" correct?
+            $token = ltrim($token, ':"');
+            if (!str_ends_with($token, '\"')) {
+                $token = rtrim($token, '"');
+            }
+            $token = str_replace('\"', '"', $token);
+            // Log::debug(sprintf('Create FieldNode %s:%s (%s)', $fieldName, $token, var_export($prohibited, true)));
+
+            return new FieldNode(trim($fieldName), trim($token), $prohibited);
+        }
+        // F Now in handleSearchNodeLog::debug(sprintf('Create StringNode "%s" (%s)', $token, var_export($prohibited, true)));
+
+        return new StringNode(trim($token), $prohibited);
+    }
+}

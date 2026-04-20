@@ -1,0 +1,140 @@
+<?php
+
+/**
+ * UpdateController.php
+ * Copyright (c) 2019 james@firefly-iii.org
+ *
+ * This file is part of Firefly III (https://github.com/firefly-iii).
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+declare(strict_types=1);
+
+namespace FireflyIII\Http\Controllers\Admin;
+
+use Carbon\Carbon;
+use FireflyIII\Helpers\Update\UpdateTrait;
+use FireflyIII\Http\Controllers\Controller;
+use FireflyIII\Http\Middleware\IsDemoUser;
+use FireflyIII\Support\Facades\FireflyConfig;
+use Illuminate\Contracts\View\Factory;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\View\View;
+
+/**
+ * Class HomeController.
+ */
+final class UpdateController extends Controller
+{
+    use UpdateTrait;
+
+    /**
+     * ConfigurationController constructor.
+     */
+    public function __construct()
+    {
+        parent::__construct();
+        $this->middleware(static function ($request, $next) {
+            app('view')->share('title', (string) trans('firefly.system_settings'));
+            app('view')->share('mainTitleIcon', 'fa-hand-spock-o');
+
+            return $next($request);
+        });
+        $this->middleware(IsDemoUser::class)->except(['index']);
+    }
+
+    /**
+     * Show page with update options.
+     *
+     * @return Factory|View
+     */
+    public function index(): Factory|\Illuminate\Contracts\View\View
+    {
+        $subTitle        = (string) trans('firefly.update_check_title');
+        $subTitleIcon    = 'fa-star';
+        $permission      = FireflyConfig::get('permission_update_check', -1);
+        $channel         = FireflyConfig::get('update_channel', 'stable');
+        $selected        = $permission->data;
+        $channelSelected = $channel->data;
+        $options         = [
+            -1 => (string) trans('firefly.updates_ask_me_later'),
+            0  => (string) trans('firefly.updates_do_not_check'),
+            1  => (string) trans('firefly.updates_enable_check'),
+        ];
+
+        $channelOptions  = [
+            'stable' => (string) trans('firefly.update_channel_stable'),
+            'beta'   => (string) trans('firefly.update_channel_beta'),
+            'alpha'  => (string) trans('firefly.update_channel_alpha'),
+        ];
+
+        return view('settings.update.index', [
+            'subTitle'        => $subTitle,
+            'subTitleIcon'    => $subTitleIcon,
+            'selected'        => $selected,
+            'options'         => $options,
+            'channelSelected' => $channelSelected,
+            'channelOptions'  => $channelOptions,
+        ]);
+    }
+
+    /**
+     * Post new settings.
+     */
+    public function post(Request $request): RedirectResponse
+    {
+        $checkForUpdates = (int) $request->get('check_for_updates');
+        $channel         = $request->get('update_channel');
+        $channel         = in_array($channel, ['stable', 'beta', 'alpha'], true) ? $channel : 'stable';
+
+        FireflyConfig::set('permission_update_check', $checkForUpdates);
+        FireflyConfig::set('last_update_check', Carbon::now()->getTimestamp());
+        FireflyConfig::set('update_channel', $channel);
+        session()->flash('success', (string) trans('firefly.configuration_updated'));
+
+        return redirect(route('settings.update-check'));
+    }
+
+    /**
+     * Does a manual update check.
+     */
+    public function updateCheck(): RedirectResponse
+    {
+        $release = $this->getLatestRelease();
+        $level   = 'info';
+        $message = trans('firefly.no_new_release_available');
+        if ('' !== $release->getError()) {
+            $level   = 'error';
+            $message = $release->getError();
+        }
+        if ($release->isNewVersionAvailable()) {
+            // if running develop, slightly different message.
+            if (str_contains(config('firefly.version'), 'develop')) {
+                $message = trans('firefly.update_current_dev_older', ['version' => config('firefly.version'), 'new_version' => $release->getNewVersion()]);
+            }
+            if (!str_contains(config('firefly.version'), 'develop')) {
+                $message = trans('firefly.update_new_version_alert', [
+                    'your_version' => config('firefly.version'),
+                    'new_version'  => $release->getNewVersion(),
+                    'date'         => $release->getPublishedAt()->format('Y-m-d H:i:s'),
+                ]);
+            }
+        }
+
+        session()->flash($level, $message);
+
+        return redirect(route('settings.update-check'));
+    }
+}

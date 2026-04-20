@@ -1,0 +1,223 @@
+<?php
+
+/*
+ * ConfigurationController.php
+ * Copyright (c) 2021 james@firefly-iii.org
+ *
+ * This file is part of Firefly III (https://github.com/firefly-iii).
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+declare(strict_types=1);
+
+namespace FireflyIII\Api\V1\Controllers\System;
+
+use FireflyIII\Api\V1\Controllers\Controller;
+use FireflyIII\Api\V1\Requests\System\UpdateRequest;
+use FireflyIII\Enums\WebhookDelivery;
+use FireflyIII\Enums\WebhookResponse;
+use FireflyIII\Enums\WebhookTrigger;
+use FireflyIII\Exceptions\FireflyException;
+use FireflyIII\Support\Binder\EitherConfigKey;
+use FireflyIII\Support\Facades\FireflyConfig;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\ValidationException;
+
+/**
+ * Class ConfigurationController
+ */
+final class ConfigurationController extends Controller
+{
+    /**
+     * This endpoint is documented at:
+     * https://api-docs.firefly-iii.org/?urls.primaryName=2.0.0%20(v1)#/configuration/getConfiguration
+     *
+     * @throws FireflyException
+     */
+    public function index(): JsonResponse
+    {
+        try {
+            $dynamicData = $this->getDynamicConfiguration();
+        } catch (FireflyException $e) {
+            Log::error($e->getMessage());
+            Log::error($e->getTraceAsString());
+
+            throw new FireflyException('200030: Could not load config variables.', 0, $e);
+        }
+        $staticData = $this->getStaticConfiguration();
+        $return     = [];
+        foreach ($dynamicData as $key => $value) {
+            $return[] = [
+                'title'    => sprintf('configuration.%s', $key),
+                'value'    => $value,
+                'editable' => true,
+            ];
+        }
+        foreach ($staticData as $key => $value) {
+            $return[] = [
+                'title'    => $key,
+                'value'    => $value,
+                'editable' => false,
+            ];
+        }
+
+        return response()->api($return);
+    }
+
+    /**
+     * This endpoint is documented at:
+     * https://api-docs.firefly-iii.org/?urls.primaryName=2.0.0%20(v1)#/configuration/getSingleConfiguration
+     */
+    public function show(string $configKey): JsonResponse
+    {
+        $dynamic  = $this->getDynamicConfiguration();
+        $shortKey = str_replace('configuration.', '', $configKey);
+        if (str_starts_with($configKey, 'configuration.')) {
+            $data = [
+                'title'    => $configKey,
+                'value'    => $dynamic[$shortKey],
+                'editable' => true,
+            ];
+
+            return response()->api(['data' => $data])->header('Content-Type', self::JSON_CONTENT_TYPE);
+        }
+        if (str_starts_with($configKey, 'webhook.')) {
+            $data = [
+                'title'    => $configKey,
+                'value'    => $this->getWebhookConfiguration($configKey),
+                'editable' => false,
+            ];
+
+            return response()->api(['data' => $data])->header('Content-Type', self::JSON_CONTENT_TYPE);
+        }
+
+        // fallback
+        $data     = [
+            'title'    => $configKey,
+            'value'    => config($shortKey),
+            'editable' => false,
+        ];
+
+        return response()->api(['data' => $data])->header('Content-Type', self::JSON_CONTENT_TYPE);
+    }
+
+    /**
+     * This endpoint is documented at:
+     * https://api-docs.firefly-iii.org/?urls.primaryName=2.0.0%20(v1)#/configuration/setConfiguration
+     *
+     * Update the configuration.
+     *
+     * @throws FireflyException
+     * @throws ValidationException
+     */
+    public function update(UpdateRequest $request, string $name): JsonResponse
+    {
+        $data      = $request->getAll();
+        $shortName = str_replace('configuration.', '', $name);
+
+        FireflyConfig::set($shortName, $data['value']);
+
+        // get updated config:
+        $newConfig = $this->getDynamicConfiguration();
+        $data      = [
+            'title'    => $name,
+            'value'    => $newConfig[$shortName],
+            'editable' => true,
+        ];
+
+        return response()->api(['data' => $data])->header('Content-Type', self::CONTENT_TYPE);
+    }
+
+    /**
+     * Get all config values.
+     *
+     * @throws FireflyException
+     */
+    private function getDynamicConfiguration(): array
+    {
+        $isDemoSite            = FireflyConfig::get('is_demo_site', false);
+        $updateCheck           = FireflyConfig::get('permission_update_check', -1);
+        $singleUser            = FireflyConfig::get('single_user_mode', true);
+        $lastCheck             = FireflyConfig::get('last_update_check', 1);
+        $enableExchangeRates   = FireflyConfig::get('enable_exchange_rates', config('cer.enabled'));
+        $useRunningBalance     = FireflyConfig::get('use_running_balance', true);
+        $enableExternalMap     = FireflyConfig::get('enable_external_map', false);
+        $enableExternalRates   = FireflyConfig::get('enable_external_rates', false);
+        $allowWebhooks         = FireflyConfig::get('allow_webhooks', false);
+        $enableBatchProcessing = FireflyConfig::get('enable_batch_processing', false);
+        $validUrlProtocols     = FireflyConfig::get('valid_url_protocols', 'http,https');
+
+        return [
+            'is_demo_site'            => $isDemoSite?->data,
+            'permission_update_check' => null === $updateCheck ? null : (int) $updateCheck->data,
+            'single_user_mode'        => $singleUser?->data,
+            'last_update_check'       => null === $lastCheck ? null : (int) $lastCheck->data,
+            'enable_exchange_rates'   => $enableExchangeRates?->data,
+            'use_running_balance'     => $useRunningBalance?->data,
+            'enable_external_map'     => $enableExternalMap?->data,
+            'enable_external_rates'   => $enableExternalRates?->data,
+            'allow_webhooks'          => $allowWebhooks?->data,
+            'enable_batch_processing' => $enableBatchProcessing?->data,
+            'valid_url_protocols'     => $validUrlProtocols->data ?? 'http,https',
+        ];
+    }
+
+    private function getStaticConfiguration(): array
+    {
+        $list   = EitherConfigKey::$static;
+        $return = [];
+        foreach ($list as $key) {
+            $return[$key] = config($key);
+        }
+
+        return $return;
+    }
+
+    private function getWebhookConfiguration(string $configKey): array
+    {
+        switch ($configKey) {
+            case 'webhook.triggers':
+                $cases = WebhookTrigger::cases();
+                $data  = [];
+                foreach ($cases as $c) {
+                    $data[$c->name] = $c->value;
+                }
+
+                return $data;
+
+            case 'webhook.responses':
+                $cases = WebhookResponse::cases();
+                $data  = [];
+                foreach ($cases as $c) {
+                    $data[$c->name] = $c->value;
+                }
+
+                return $data;
+
+            case 'webhook.deliveries':
+                $cases = WebhookDelivery::cases();
+                $data  = [];
+                foreach ($cases as $c) {
+                    $data[$c->name] = $c->value;
+                }
+
+                return $data;
+
+            default:
+                throw new FireflyException(sprintf('Unknown webhook configuration key "%s".', $configKey));
+        }
+    }
+}

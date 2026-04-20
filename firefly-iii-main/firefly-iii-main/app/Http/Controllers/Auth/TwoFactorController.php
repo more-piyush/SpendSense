@@ -1,0 +1,237 @@
+<?php
+
+/**
+ * TwoFactorController.php
+ * Copyright (c) 2019 james@firefly-iii.org
+ *
+ * This file is part of Firefly III (https://github.com/firefly-iii).
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+declare(strict_types=1);
+
+namespace FireflyIII\Http\Controllers\Auth;
+
+use Carbon\Carbon;
+use FireflyIII\Events\Security\User\UserHasFewMFABackupCodesLeft;
+use FireflyIII\Events\Security\User\UserHasNoMFABackupCodesLeft;
+use FireflyIII\Events\Security\User\UserHasUsedBackupCode;
+use FireflyIII\Events\Security\User\UserKeepsFailingMFA;
+use FireflyIII\Http\Controllers\Controller;
+use FireflyIII\Support\Facades\Preferences;
+use FireflyIII\User;
+use Illuminate\Contracts\View\Factory;
+use Illuminate\Contracts\View\View;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
+use PragmaRX\Google2FALaravel\Support\Authenticator;
+use Psr\Container\ContainerExceptionInterface;
+use Psr\Container\NotFoundExceptionInterface;
+
+/**
+ * Class TwoFactorController.
+ */
+final class TwoFactorController extends Controller
+{
+    /**
+     * What to do if 2FA lost?
+     */
+    public function lostTwoFactor(): Factory|View
+    {
+        /** @var User $user */
+        $user      = auth()->user();
+        $siteOwner = config('firefly.site_owner');
+        $title     = (string) trans('firefly.two_factor_forgot_title');
+
+        return view('auth.lost-two-factor', ['user' => $user, 'siteOwner' => $siteOwner, 'title' => $title]);
+    }
+
+    /**
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     */
+    public function submitMFA(Request $request): RedirectResponse
+    {
+        /** @var array $mfaHistory */
+        $mfaHistory    = Preferences::get('mfa_history', [])->data;
+        $mfaCode       = (string) $request->get('one_time_password');
+
+        // is in history? then refuse to use it.
+        if ($this->inMFAHistory($mfaCode, $mfaHistory)) {
+            $this->filterMFAHistory();
+            session()->flash('error', trans('firefly.wrong_mfa_code'));
+
+            return redirect(route('home'));
+        }
+
+        /** @var Authenticator $authenticator */
+        $authenticator = app(Authenticator::class)->boot($request);
+
+        // if not OK, save error.
+        if (!$authenticator->isAuthenticated()) {
+            $user    = auth()->user();
+            $this->addToMFAFailureCounter();
+            $counter = $this->getMFAFailureCounter();
+            if (3 === $counter || 10 === $counter) {
+                // do not reset MFA failure counter, but DO send a warning to the user.
+                Log::channel('audit')->info(sprintf('User "%s" has had %d failed MFA attempts.', $user->email, $counter));
+                event(new UserKeepsFailingMFA($user, $counter));
+            }
+            unset($user);
+        }
+
+        if ($authenticator->isAuthenticated()) {
+            // save MFA in preferences
+            $this->addToMFAHistory($mfaCode);
+
+            // reset failure count
+            $this->resetMFAFailureCounter();
+
+            // otp auth success!
+            return redirect(route('home'));
+        }
+
+        // could be user has a backup code.
+        if ($this->isBackupCode($mfaCode)) {
+            $this->removeFromBackupCodes($mfaCode);
+            $authenticator->login();
+
+            // reset failure count
+            $this->resetMFAFailureCounter();
+
+            session()->flash('info', trans('firefly.mfa_backup_code'));
+            // send user notification.
+            $user = auth()->user();
+            Log::channel('audit')->info(sprintf('User "%s" has used a backup code.', $user->email));
+            event(new UserHasUsedBackupCode($user));
+
+            return redirect(route('home'));
+        }
+
+        session()->flash('error', trans('firefly.wrong_mfa_code'));
+
+        return redirect(route('home'));
+    }
+
+    private function addToMFAFailureCounter(): void
+    {
+        $preference = (int) Preferences::get('mfa_failure_count', 0)->data;
+        ++$preference;
+        Log::channel('audit')->info(sprintf('MFA failure count is set to %d.', $preference));
+        Preferences::set('mfa_failure_count', $preference);
+    }
+
+    private function addToMFAHistory(string $mfaCode): void
+    {
+        /** @var array $mfaHistory */
+        $mfaHistory   = Preferences::get('mfa_history', [])->data;
+        $entry        = ['time' => Carbon::now()->getTimestamp(), 'code' => $mfaCode];
+        $mfaHistory[] = $entry;
+
+        Preferences::set('mfa_history', $mfaHistory);
+        $this->filterMFAHistory();
+    }
+
+    /**
+     * Remove old entries from the preferences array.
+     */
+    private function filterMFAHistory(): void
+    {
+        /** @var array $mfaHistory */
+        $mfaHistory = Preferences::get('mfa_history', [])->data;
+        $newHistory = [];
+        $now        = Carbon::now()->getTimestamp();
+        foreach ($mfaHistory as $entry) {
+            $time = $entry['time'];
+            $code = $entry['code'];
+            if (($now - $time) <= 300) {
+                $newHistory[] = ['time' => $time, 'code' => $code];
+            }
+        }
+        Preferences::set('mfa_history', $newHistory);
+    }
+
+    private function getMFAFailureCounter(): int
+    {
+        $value = (int) Preferences::get('mfa_failure_count', 0)->data;
+        Log::channel('audit')->info(sprintf('MFA failure count is %d.', $value));
+
+        return $value;
+    }
+
+    /**
+     * Each MFA history has a timestamp and a code, saving the MFA entries for 5 minutes. So if the
+     * submitted MFA code has been submitted in the last 5 minutes, it won't work despite being valid.
+     */
+    private function inMFAHistory(string $mfaCode, array $mfaHistory): bool
+    {
+        $now = Carbon::now()->getTimestamp();
+        foreach ($mfaHistory as $entry) {
+            $time = $entry['time'];
+            $code = $entry['code'];
+            if ($code === $mfaCode && ($now - $time) <= 300) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Checks if code is in users backup codes.
+     */
+    private function isBackupCode(string $mfaCode): bool
+    {
+        $list = Preferences::get('mfa_recovery', [])->data;
+        if (!is_array($list)) {
+            $list = [];
+        }
+
+        return in_array($mfaCode, $list, true);
+    }
+
+    /**
+     * Remove the used code from the list of backup codes.
+     */
+    private function removeFromBackupCodes(string $mfaCode): void
+    {
+        $list    = Preferences::get('mfa_recovery', [])->data;
+        if (!is_array($list)) {
+            $list = [];
+        }
+        $newList = array_values(array_diff($list, [$mfaCode]));
+
+        // if the list is 3 or less, send a notification.
+        if (count($newList) <= 3 && count($newList) > 0) {
+            $user = auth()->user();
+            Log::channel('audit')->info(sprintf('User "%s" has used a backup code. They have %d backup codes left.', $user->email, count($newList)));
+            event(new UserHasFewMFABackupCodesLeft($user, count($newList)));
+        }
+        // if the list is empty, send notification
+        if (0 === count($newList)) {
+            $user = auth()->user();
+            Log::channel('audit')->info(sprintf('User "%s" has used their last backup code.', $user->email));
+            event(new UserHasNoMFABackupCodesLeft($user));
+        }
+
+        Preferences::set('mfa_recovery', $newList);
+    }
+
+    private function resetMFAFailureCounter(): void
+    {
+        Preferences::set('mfa_failure_count', 0);
+        Log::channel('audit')->info('MFA failure count is set to zero.');
+    }
+}
