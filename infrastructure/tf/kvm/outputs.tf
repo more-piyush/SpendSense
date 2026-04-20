@@ -22,3 +22,13 @@ output "floating_ip_pool_used" {
   value       = local.effective_floating_ip_pool
   description = "Floating IP pool Terraform used for allocating floating IPs."
 }
+
+output "external_network_used" {
+  value       = local.resolved_external_network_name
+  description = "External network Terraform used for router egress and floating IP allocation."
+}
+
+output "attached_data_volume_id" {
+  value       = var.data_volume_name != "" ? data.openstack_blockstorage_volume_v3.data_volume[0].id : null
+  description = "Existing Cinder volume ID attached to the control-plane node, if configured."
+}

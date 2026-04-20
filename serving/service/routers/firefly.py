@@ -1,58 +1,37 @@
-from datetime import datetime, timezone
+from service.routers.categorization import predict_categorization
+from service.routers.trend import predict_trend
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
-from service.schemas import (
-    CategoryPrediction,
-    FireflyTransactionRequest,
-    FireflyTransactionResponse,
-    CategorizationResponse,
-    TrendAnomalyDetection,
-    TrendAnalysis,
-    TrendResponse,
-)
+from service.dependencies import get_metrics_registry, get_model_manager, get_settings
+from service.metrics import MetricsRegistry
+from service.model_loader import ModelManager
+from service.schemas import FireflyTransactionRequest, FireflyTransactionResponse
 
 router = APIRouter(prefix="/firefly", tags=["firefly"])
 
 
 @router.post("/transactions/enrich", response_model=FireflyTransactionResponse)
-def enrich_transaction(request: FireflyTransactionRequest) -> FireflyTransactionResponse:
-    categorization = CategorizationResponse(
-        transaction_id=request.transaction.transaction_id,
-        model_family="logistic_regression",
-        model_version="1.1.0",
-        predicted_categories=[CategoryPrediction(category="Shopping", confidence=0.91)],
-        abstained=False,
-        abstention_threshold=0.7,
-        max_confidence=0.91,
-        inference_time_ms=1.0,
-        timestamp=datetime.now(timezone.utc).isoformat(),
+def enrich_transaction(
+    request: FireflyTransactionRequest,
+    manager: ModelManager = Depends(get_model_manager),
+    metrics: MetricsRegistry = Depends(get_metrics_registry),
+    settings=Depends(get_settings),
+) -> FireflyTransactionResponse:
+    categorization = predict_categorization(
+        request.transaction,
+        manager=manager,
+        metrics=metrics,
+        settings=settings,
     )
 
     trend = None
     if request.include_trend and request.trend_payload is not None:
-        trend = TrendResponse(
-            user_id=request.trend_payload.user_id,
-            category=request.trend_payload.category,
-            period=request.trend_payload.period,
-            model_family="xgboost_optuna",
-            model_version="1.0.0",
-            predicted_next_month_spend=355.12,
-            anomaly_detection=TrendAnomalyDetection(
-                ensemble_score=0.34,
-                xgb_residual_score=0.28,
-                isolation_forest_score=0.43,
-                is_anomaly=False,
-                anomaly_threshold=0.7,
-            ),
-            trend_analysis=TrendAnalysis(
-                predicted_change_pct=3.68,
-                trend_direction="increasing",
-                spending_vs_history="above_average",
-                deviation_from_3m_mean=46.70,
-            ),
-            inference_time_ms=1.0,
-            timestamp=datetime.now(timezone.utc).isoformat(),
+        trend = predict_trend(
+            request.trend_payload,
+            manager=manager,
+            metrics=metrics,
+            settings=settings,
         )
 
     return FireflyTransactionResponse(

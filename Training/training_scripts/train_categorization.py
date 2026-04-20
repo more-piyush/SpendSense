@@ -629,6 +629,8 @@ def train_distilbert(config, train_df, val_df, test_df, label_binarizer,
             "config": {k: v for k, v in config.items() if not k.startswith("_")},
             "n_classes": n_classes,
             "classes": list(label_binarizer.classes_),
+            "currency_vocab": currency_vocab,
+            "country_vocab": country_vocab,
         }, model_path)
         artifacts = {"model_path": model_path}
         model_info = mlflow.pyfunc.log_model(

@@ -104,7 +104,7 @@ Build and push these images before production use:
 - `firefly-data:latest` (from `Data/pipelines/Dockerfile`)
 - `spendsense/training:latest` (from `Training/training_scripts/Dockerfile`)
 
-Serving currently uses: `pranalithakkar/serving-baseline:latest`.
+Serving currently uses: `spendsense/serving-unified:latest`.
 
 ## Teardown
 

@@ -1,7 +1,10 @@
 locals {
-  control_plane_name         = "${var.cluster_name}-cp-1"
-  worker_names               = [for i in range(var.worker_count) : format("%s-worker-%02d", var.cluster_name, i + 1)]
-  effective_floating_ip_pool = var.floating_ip_pool != "" ? var.floating_ip_pool : var.external_network_name
+  control_plane_name             = "${var.cluster_name}-cp-1"
+  worker_names                   = [for i in range(var.worker_count) : format("%s-worker-%02d", var.cluster_name, i + 1)]
+  use_named_external_net         = var.external_network_name != ""
+  resolved_external_network_name = local.use_named_external_net ? data.openstack_networking_network_v2.external_by_name[0].name : data.openstack_networking_network_v2.external_auto[0].name
+  resolved_external_network_id   = local.use_named_external_net ? data.openstack_networking_network_v2.external_by_name[0].id : data.openstack_networking_network_v2.external_auto[0].id
+  effective_floating_ip_pool     = var.floating_ip_pool != "" ? var.floating_ip_pool : local.resolved_external_network_name
 }
 
 resource "openstack_networking_network_v2" "cluster" {
@@ -17,13 +20,24 @@ resource "openstack_networking_subnet_v2" "cluster" {
   dns_nameservers = ["8.8.8.8", "1.1.1.1"]
 }
 
-data "openstack_networking_network_v2" "external" {
-  name = var.external_network_name
+data "openstack_networking_network_v2" "external_by_name" {
+  count = local.use_named_external_net ? 1 : 0
+  name  = var.external_network_name
+}
+
+data "openstack_networking_network_v2" "external_auto" {
+  count    = local.use_named_external_net ? 0 : 1
+  external = true
+}
+
+data "openstack_blockstorage_volume_v3" "data_volume" {
+  count = var.data_volume_name != "" ? 1 : 0
+  name  = var.data_volume_name
 }
 
 resource "openstack_networking_router_v2" "cluster" {
   name                = var.router_name
-  external_network_id = data.openstack_networking_network_v2.external.id
+  external_network_id = local.resolved_external_network_id
 }
 
 resource "openstack_networking_router_interface_v2" "cluster" {
@@ -100,13 +114,6 @@ resource "openstack_networking_secgroup_rule_v2" "all_internal" {
   security_group_id = openstack_networking_secgroup_v2.cluster[0].id
 }
 
-resource "openstack_networking_secgroup_rule_v2" "egress" {
-  count             = var.create_security_group ? 1 : 0
-  direction         = "egress"
-  ethertype         = "IPv4"
-  security_group_id = openstack_networking_secgroup_v2.cluster[0].id
-}
-
 resource "openstack_compute_instance_v2" "control_plane" {
   name            = local.control_plane_name
   image_name      = var.image_name
@@ -135,6 +142,12 @@ resource "openstack_networking_floatingip_v2" "control_plane" {
 resource "openstack_compute_floatingip_associate_v2" "control_plane" {
   floating_ip = openstack_networking_floatingip_v2.control_plane.address
   instance_id = openstack_compute_instance_v2.control_plane.id
+}
+
+resource "openstack_compute_volume_attach_v2" "control_plane_data_volume" {
+  count       = var.data_volume_name != "" ? 1 : 0
+  instance_id = openstack_compute_instance_v2.control_plane.id
+  volume_id   = data.openstack_blockstorage_volume_v3.data_volume[0].id
 }
 
 resource "openstack_compute_instance_v2" "workers" {

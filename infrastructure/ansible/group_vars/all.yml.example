@@ -11,6 +11,11 @@ kubeconfig_local_path: "/tmp/spendsense-chameleon.yaml"
 k3s_install_channel: "stable"
 k3s_server_extra_args: "--write-kubeconfig-mode 644 --disable traefik"
 
+# Optional attached data volume mount settings.
+data_volume_device: "/dev/vdb"
+data_volume_mount_path: "/data"
+data_volume_filesystem: "ext4"
+
 # Optional Argo CD placeholders.
 argocd_namespace: "argocd"
 argocd_install_manifest: "https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml"

@@ -7,12 +7,15 @@ ssh_user              = "cc"
 image_name            = "REPLACE_WITH_IMAGE_NAME"
 control_plane_flavor  = "REPLACE_WITH_CONTROL_PLANE_FLAVOR"
 worker_flavor         = "REPLACE_WITH_WORKER_FLAVOR"
-external_network_name = "REPLACE_WITH_EXTERNAL_NETWORK"
 reservation_id        = "REPLACE_WITH_EXISTING_RESERVATION_UUID"
+data_volume_name      = "OPTIONAL_EXISTING_VOLUME_NAME"
 
 worker_count = 2
 
-# Optional. If omitted, Terraform uses external_network_name as the floating IP pool.
+# Optional. If omitted, Terraform auto-discovers the external network.
+# external_network_name = "REPLACE_WITH_EXTERNAL_NETWORK"
+
+# Optional. If omitted, Terraform uses the resolved external network as the floating IP pool.
 # floating_ip_pool = "REPLACE_WITH_FLOATING_IP_POOL"
 
 # Optional: uncomment only if you need custom networking or tighter access.

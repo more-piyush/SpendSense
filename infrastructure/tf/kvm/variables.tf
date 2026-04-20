@@ -48,6 +48,12 @@ variable "reservation_id" {
   default     = ""
 }
 
+variable "data_volume_name" {
+  description = "Optional existing Cinder volume name to attach to the control-plane node."
+  type        = string
+  default     = ""
+}
+
 variable "network_name" {
   description = "Private network name to create for the cluster."
   type        = string
@@ -73,8 +79,9 @@ variable "router_name" {
 }
 
 variable "external_network_name" {
-  description = "External network name in Chameleon, e.g. public or sharednet1."
+  description = "Optional external network name in OpenStack. Leave empty to auto-discover the external network."
   type        = string
+  default     = ""
 }
 
 variable "floating_ip_pool" {
