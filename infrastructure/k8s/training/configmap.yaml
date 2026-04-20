@@ -7,14 +7,8 @@ data:
   retrain_categorization.yaml: |
     model_type: DISTILBERT_CATEGORIZATION
 
-    feedback_source: database
-
-    database:
-      host: postgres.firefly-platform.svc.cluster.local
-      port: 5432
-      dbname: firefly
-      user: firefly
-      password: null
+    feedback_source: file
+    feedback_path: s3://production-logs/serving/feedback/categorization/
 
     schedule: weekly
     override_rate_threshold: 0.15
@@ -48,14 +42,8 @@ data:
   retrain_trend.yaml: |
     model_type: XGBOOST_TREND
 
-    feedback_source: database
-
-    database:
-      host: postgres.firefly-platform.svc.cluster.local
-      port: 5432
-      dbname: firefly
-      user: firefly
-      password: null
+    feedback_source: file
+    feedback_path: s3://production-logs/serving/feedback/trend_detection/
 
     schedule: monthly
     min_feedback_signals: 10

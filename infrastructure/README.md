@@ -105,6 +105,8 @@ Build and push these images before production use:
 - `spendsense/training:latest` (from `Training/training_scripts/Dockerfile`)
 
 Serving currently uses: `spendsense/serving-unified:latest`.
+The unified serving stack loads the active MLflow artifacts from `active_models.json`;
+the older ONNX example images under `Serving/` are not used by the production deployment.
 
 ## Teardown
 

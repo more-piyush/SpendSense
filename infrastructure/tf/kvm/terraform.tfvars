@@ -7,7 +7,7 @@ ssh_user        = "cc"
 image_name           = "CC-Ubuntu24.04"
 control_plane_flavor = "m1.large"
 worker_flavor        = "m1.large"
-reservation_id       = "8b675bdd-33eb-4288-8a5d-bfa3959add5a"
+reservation_id       = "ca122638-97d8-49b5-9955-8cac9e0d4ae8"
 data_volume_name     = "mlops_proj20_devops"
 
 worker_count = 0

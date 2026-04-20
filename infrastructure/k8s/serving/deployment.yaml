@@ -15,7 +15,8 @@ spec:
     spec:
       containers:
         - name: serving-baseline
-          image: spendsense/serving-unified:latest
+          image: docker.io/spendsense/serving-unified:latest
+          imagePullPolicy: IfNotPresent
           env:
             - name: ACTIVE_MODELS_PATH
               value: s3://mlflow/registry/active_models.json
@@ -33,6 +34,10 @@ spec:
                   key: MINIO_ROOT_PASSWORD
             - name: FEEDBACK_STORE_PATH
               value: /tmp/spendsense-serving-feedback.jsonl
+            - name: PRODUCTION_LOGS_BUCKET
+              value: production-logs
+            - name: PRODUCTION_LOGS_PREFIX
+              value: serving
           ports:
             - containerPort: 8000
           readinessProbe:
