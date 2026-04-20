@@ -12,7 +12,7 @@ kubectl get probe -n "$NS"
 
 echo "[INFO] Rollout status"
 kubectl rollout status deployment/monitoring-grafana -n "$NS" --timeout=240s
-kubectl rollout status deployment/monitoring-kube-prometheus-operator -n "$NS" --timeout=240s
+kubectl rollout status deployment/monitoring-operator -n "$NS" --timeout=240s
 kubectl rollout status deployment/blackbox-exporter -n "$NS" --timeout=240s
 
 echo "[INFO] Grafana access"
