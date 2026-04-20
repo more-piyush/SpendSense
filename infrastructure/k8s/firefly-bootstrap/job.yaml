@@ -1,0 +1,33 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: firefly-bootstrap
+  namespace: firefly-platform
+spec:
+  backoffLimit: 4
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: firefly-bootstrap
+          image: fireflyiii/core:latest
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+              php artisan migrate --force
+              php artisan firefly-iii:upgrade-database
+          envFrom:
+            - configMapRef:
+                name: firefly-config
+          env:
+            - name: APP_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: firefly-secret
+                  key: APP_KEY
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: POSTGRES_PASSWORD

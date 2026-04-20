@@ -19,6 +19,10 @@ kubectl rollout status deployment/serving-baseline -n "$NS" --timeout=240s
 
 echo "[INFO] MinIO bootstrap logs"
 kubectl logs job/minio-bootstrap -n "$NS" || true
+echo "[INFO] PostgreSQL bootstrap logs"
+kubectl logs job/postgres-bootstrap -n "$NS" || true
+echo "[INFO] Firefly bootstrap logs"
+kubectl logs job/firefly-bootstrap -n "$NS" || true
 
 echo "[INFO] Access URLs"
 echo "[INFO] Firefly: http://${FLOATING_IP:-<FLOATING_IP>}:30080"

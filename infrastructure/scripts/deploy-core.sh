@@ -16,20 +16,31 @@ kubectl apply -f "${K8S_DIR}/storage/pvc-training-state.yaml"
 
 kubectl apply -f "${K8S_DIR}/postgres/deployment.yaml"
 kubectl apply -f "${K8S_DIR}/postgres/service.yaml"
+kubectl rollout status deployment/postgres -n firefly-platform --timeout=240s
+kubectl delete -f "${K8S_DIR}/postgres-bootstrap/job.yaml" --ignore-not-found=true
 kubectl apply -f "${K8S_DIR}/postgres-bootstrap/job.yaml"
+kubectl wait --for=condition=complete job/postgres-bootstrap -n firefly-platform --timeout=240s
 
 kubectl apply -f "${K8S_DIR}/minio/deployment.yaml"
 kubectl apply -f "${K8S_DIR}/minio/service.yaml"
+kubectl rollout status deployment/minio -n firefly-platform --timeout=240s
 
 kubectl apply -f "${K8S_DIR}/mlflow/deployment.yaml"
 kubectl apply -f "${K8S_DIR}/mlflow/service.yaml"
+kubectl rollout status deployment/mlflow -n firefly-platform --timeout=240s
 
+kubectl delete -f "${K8S_DIR}/minio-bootstrap/job.yaml" --ignore-not-found=true
 kubectl apply -f "${K8S_DIR}/minio-bootstrap/job.yaml"
+kubectl wait --for=condition=complete job/minio-bootstrap -n firefly-platform --timeout=240s
 
 tmp_config="$(mktemp)"
 sed "s|<FLOATING_IP>|${FLOATING_IP}|g" "${K8S_DIR}/firefly/configmap.yaml" > "$tmp_config"
 kubectl apply -f "$tmp_config"
 rm -f "$tmp_config"
+
+kubectl delete -f "${K8S_DIR}/firefly-bootstrap/job.yaml" --ignore-not-found=true
+kubectl apply -f "${K8S_DIR}/firefly-bootstrap/job.yaml"
+kubectl wait --for=condition=complete job/firefly-bootstrap -n firefly-platform --timeout=300s
 
 kubectl apply -f "${K8S_DIR}/firefly/deployment.yaml"
 kubectl apply -f "${K8S_DIR}/firefly/service.yaml"
