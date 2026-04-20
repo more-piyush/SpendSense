@@ -86,12 +86,11 @@ def _parse_s3_uri(uri: str):
     return parts[0], parts[1]
 
 
-def _split_registry_path(registry_path: str, filename: str) -> tuple[str, str]:
+def _registry_file_path(registry_path: str, filename: str) -> str:
     """Resolve a registry file path for either local fs or s3:// storage."""
     if registry_path.startswith("s3://"):
-        bucket, prefix = _parse_s3_uri(registry_path.rstrip("/"))
-        return bucket, f"{prefix}/{filename}"
-    return "", os.path.join(registry_path, filename)
+        return registry_path.rstrip("/") + f"/{filename}"
+    return os.path.join(registry_path, filename)
 
 
 def get_s3_storage_options(s3_cfg: dict) -> dict:
@@ -341,7 +340,7 @@ def _next_model_version(entries: list, model_id: str) -> str:
 
 def load_active_models(registry_path: str) -> dict:
     """Load the active-model selection JSON from the registry directory."""
-    _, active_models_file = _split_registry_path(registry_path, "active_models.json")
+    active_models_file = _registry_file_path(registry_path, "active_models.json")
     registry_config = {"s3": {"endpoint_url": os.environ.get("MLFLOW_S3_ENDPOINT_URL"), "region": "us-east-1"}}
     _ensure_active_models_file(active_models_file, config=registry_config)
     return load_json_document(active_models_file, default={}, config=registry_config)
@@ -353,7 +352,7 @@ def set_active_models(
     active_trend_model: str = None,
 ) -> dict:
     """Update active model selections for categorization and trend tasks."""
-    _, active_models_file = _split_registry_path(registry_path, "active_models.json")
+    active_models_file = _registry_file_path(registry_path, "active_models.json")
     current = load_active_models(registry_path)
     registry_config = {"s3": {"endpoint_url": os.environ.get("MLFLOW_S3_ENDPOINT_URL"), "region": "us-east-1"}}
 
@@ -373,8 +372,8 @@ def register_candidate_model(config: dict, run_id: str, metrics: dict) -> dict:
     """Register a successfully trained model candidate in the file registry."""
     registry_path = config.get("registry_path", "s3://mlflow/registry")
 
-    _, registry_file = _split_registry_path(registry_path, "registry.json")
-    _, active_models_file = _split_registry_path(registry_path, "active_models.json")
+    registry_file = _registry_file_path(registry_path, "registry.json")
+    active_models_file = _registry_file_path(registry_path, "active_models.json")
     _ensure_active_models_file(active_models_file, config=config)
 
     entries = _load_registry_entries(registry_file, config=config)
