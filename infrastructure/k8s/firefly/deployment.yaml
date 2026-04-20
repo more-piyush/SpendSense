@@ -15,7 +15,8 @@ spec:
     spec:
       containers:
         - name: firefly
-          image: fireflyiii/core:latest
+          image: spendsense/firefly-custom:latest
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
           envFrom:
