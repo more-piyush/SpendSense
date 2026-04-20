@@ -4,6 +4,11 @@
 
 run_name: "cat_distilbert_base"
 model_type: distilbert
+task_type: categorization
+model_id: cat_distilbert_base
+model_family: distilbert
+training_mode: initial
+registry_path: s3://mlflow/registry
 
 # Model
 pretrained_model: distilbert-base-uncased

@@ -38,7 +38,7 @@ data:
 
     mlflow_tracking_uri: http://mlflow.firefly-platform.svc.cluster.local:5000
     experiment_name: categorization_retrain
-    registry_path: /data/model_registry
+    registry_path: s3://mlflow/registry
 
     state_file: /data/retrain_state_categorization.json
     retrain_data_path: /tmp/retrain_categorization.parquet
@@ -76,7 +76,7 @@ data:
 
     mlflow_tracking_uri: http://mlflow.firefly-platform.svc.cluster.local:5000
     experiment_name: trend_retrain
-    registry_path: /data/model_registry
+    registry_path: s3://mlflow/registry
 
     state_file: /data/retrain_state_trend.json
     retrain_data_path: /tmp/retrain_trend.parquet

@@ -5,6 +5,11 @@
 
 run_name: "trend_xgb_optuna_tuned"
 model_type: xgboost_optuna
+task_type: trend
+model_id: trend_xgb_optuna
+model_family: xgboost_optuna
+training_mode: initial
+registry_path: s3://mlflow/registry
 
 # Optuna settings
 optuna_n_trials: 50

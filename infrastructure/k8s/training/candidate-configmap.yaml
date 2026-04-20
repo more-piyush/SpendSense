@@ -1,0 +1,198 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: training-candidate-config
+  namespace: firefly-platform
+data:
+  cat_logreg_baseline.yaml: |
+    run_name: "cat_baseline_logistic_regression"
+    model_type: logistic_regression
+    task_type: categorization
+    model_id: cat_logreg_baseline
+    model_family: logistic_regression
+    training_mode: initial
+    registry_path: s3://mlflow/registry
+
+    max_features: 10000
+    ngram_range: [1, 2]
+    C: 1.0
+    max_iter: 1000
+
+    data_path: s3://training-data/bls_pipeline/categorization_training.parquet
+    s3:
+      endpoint_url: http://minio.firefly-platform.svc.cluster.local:9000
+      region: us-east-1
+
+    mlflow_tracking_uri: http://mlflow.firefly-platform.svc.cluster.local:5000
+    experiment_name: categorization
+
+  cat_distilbert_base.yaml: |
+    run_name: "cat_distilbert_base"
+    model_type: distilbert
+    task_type: categorization
+    model_id: cat_distilbert_base
+    model_family: distilbert
+    training_mode: initial
+    registry_path: s3://mlflow/registry
+
+    pretrained_model: distilbert-base-uncased
+    max_length: 64
+    learning_rate: 0.00002
+    batch_size: 32
+    epochs: 5
+    warmup_ratio: 0.1
+    weight_decay: 0.01
+    dropout: 0.3
+    freeze_layers: 0
+    early_stopping_patience: 2
+    mixed_precision: true
+    loss: bce_with_logits
+
+    data_path: s3://training-data/bls_pipeline/categorization_training.parquet
+    s3:
+      endpoint_url: http://minio.firefly-platform.svc.cluster.local:9000
+      region: us-east-1
+
+    mlflow_tracking_uri: http://mlflow.firefly-platform.svc.cluster.local:5000
+    experiment_name: categorization
+
+  cat_distilbert_v1.yaml: |
+    run_name: "cat_distilbert_v1_frozen"
+    model_type: distilbert
+    task_type: categorization
+    model_id: cat_distilbert_v1
+    model_family: distilbert
+    training_mode: initial
+    registry_path: s3://mlflow/registry
+
+    pretrained_model: distilbert-base-uncased
+    max_length: 64
+    learning_rate: 0.00005
+    batch_size: 32
+    epochs: 5
+    warmup_ratio: 0.15
+    weight_decay: 0.01
+    dropout: 0.2
+    freeze_layers: 4
+    early_stopping_patience: 2
+    mixed_precision: true
+    loss: bce_with_logits
+
+    data_path: s3://training-data/bls_pipeline/categorization_training.parquet
+    s3:
+      endpoint_url: http://minio.firefly-platform.svc.cluster.local:9000
+      region: us-east-1
+
+    mlflow_tracking_uri: http://mlflow.firefly-platform.svc.cluster.local:5000
+    experiment_name: categorization
+
+  cat_distilbert_v2.yaml: |
+    run_name: "cat_distilbert_v2_aggressive"
+    model_type: distilbert
+    task_type: categorization
+    model_id: cat_distilbert_v2
+    model_family: distilbert
+    training_mode: initial
+    registry_path: s3://mlflow/registry
+
+    pretrained_model: distilbert-base-uncased
+    max_length: 64
+    learning_rate: 0.0001
+    batch_size: 16
+    epochs: 5
+    warmup_ratio: 0.1
+    weight_decay: 0.005
+    dropout: 0.1
+    freeze_layers: 0
+    early_stopping_patience: 2
+    mixed_precision: true
+    loss: bce_with_logits
+
+    data_path: s3://training-data/bls_pipeline/categorization_training.parquet
+    s3:
+      endpoint_url: http://minio.firefly-platform.svc.cluster.local:9000
+      region: us-east-1
+
+    mlflow_tracking_uri: http://mlflow.firefly-platform.svc.cluster.local:5000
+    experiment_name: categorization
+
+  trend_rf_baseline.yaml: |
+    run_name: "trend_rf_baseline"
+    model_type: random_forest
+    task_type: trend
+    model_id: trend_rf_baseline
+    model_family: random_forest
+    training_mode: initial
+    registry_path: s3://mlflow/registry
+
+    n_estimators: 100
+    max_depth: 10
+    min_samples_split: 5
+    min_samples_leaf: 2
+
+    data_path: s3://training-data/bls_pipeline/trend_training.parquet
+    s3:
+      endpoint_url: http://minio.firefly-platform.svc.cluster.local:9000
+      region: us-east-1
+
+    mlflow_tracking_uri: http://mlflow.firefly-platform.svc.cluster.local:5000
+    experiment_name: trend_detection
+
+  trend_xgb_v1.yaml: |
+    run_name: "trend_xgb_v1"
+    model_type: xgboost
+    task_type: trend
+    model_id: trend_xgb_v1
+    model_family: xgboost
+    training_mode: initial
+    registry_path: s3://mlflow/registry
+
+    objective: reg:squarederror
+    n_estimators: 300
+    max_depth: 6
+    learning_rate: 0.05
+    min_child_weight: 5
+    subsample: 0.8
+    colsample_bytree: 0.8
+    reg_alpha: 0.1
+    reg_lambda: 1.0
+    gamma: 0.1
+    verbose: 10
+
+    train_isolation_forest: true
+    iso_n_estimators: 100
+    iso_contamination: 0.1
+    iso_max_samples: 256
+    xgb_ensemble_weight: 0.6
+
+    data_path: s3://training-data/bls_pipeline/trend_training.parquet
+    s3:
+      endpoint_url: http://minio.firefly-platform.svc.cluster.local:9000
+      region: us-east-1
+
+    mlflow_tracking_uri: http://mlflow.firefly-platform.svc.cluster.local:5000
+    experiment_name: trend_detection
+
+  trend_xgb_optuna.yaml: |
+    run_name: "trend_xgb_optuna_tuned"
+    model_type: xgboost_optuna
+    task_type: trend
+    model_id: trend_xgb_optuna
+    model_family: xgboost_optuna
+    training_mode: initial
+    registry_path: s3://mlflow/registry
+
+    optuna_n_trials: 50
+    train_isolation_forest: true
+    iso_n_estimators: 100
+    iso_contamination: 0.1
+    iso_max_samples: 256
+    xgb_ensemble_weight: 0.6
+
+    data_path: s3://training-data/bls_pipeline/trend_training.parquet
+    s3:
+      endpoint_url: http://minio.firefly-platform.svc.cluster.local:9000
+      region: us-east-1
+
+    mlflow_tracking_uri: http://mlflow.firefly-platform.svc.cluster.local:5000
+    experiment_name: trend_detection

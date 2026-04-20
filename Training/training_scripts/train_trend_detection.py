@@ -45,6 +45,7 @@ from utils import (
     load_parquet,
     TrainingTimer,
     log_peak_memory,
+    register_candidate_model,
 )
 
 warnings.filterwarnings("ignore")
@@ -497,11 +498,18 @@ def main():
 
     setup_mlflow(config)
 
-    with mlflow.start_run(run_name=config.get("run_name", os.path.basename(config_path))):
+    with mlflow.start_run(run_name=config.get("run_name", os.path.basename(config_path))) as run:
         # Log all config params
         for k, v in config.items():
             if not k.startswith("_"):
                 mlflow.log_param(k, v)
+
+        mlflow.set_tags({
+            "task_type": config.get("task_type", "trend"),
+            "model_id": config.get("model_id", config.get("run_name", "unknown_model")),
+            "model_family": config.get("model_family", config.get("model_type", "unknown")),
+            "training_mode": config.get("training_mode", "initial"),
+        })
 
         log_environment_info()
 
@@ -525,6 +533,7 @@ def main():
             raise ValueError(f"Unknown model_type: {model_type}")
 
         mlflow.log_artifact(config_path)
+        register_candidate_model(config, run.info.run_id, metrics)
         print("\n[DONE] Training complete. Check MLflow for full results.")
 
 

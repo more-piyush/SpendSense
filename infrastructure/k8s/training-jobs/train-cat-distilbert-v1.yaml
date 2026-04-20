@@ -1,0 +1,47 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: train-cat-distilbert-v1
+  namespace: firefly-platform
+spec:
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: train-cat-distilbert-v1
+          image: spendsense/training:latest
+          imagePullPolicy: IfNotPresent
+          command: ["python", "train_categorization.py", "/app/runtime-config/cat_distilbert_v1.yaml"]
+          env:
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: minio-secret
+                  key: MINIO_ROOT_USER
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-secret
+                  key: MINIO_ROOT_PASSWORD
+            - name: MLFLOW_S3_ENDPOINT_URL
+              value: http://minio.firefly-platform.svc.cluster.local:9000
+          volumeMounts:
+            - name: runtime-config
+              mountPath: /app/runtime-config/cat_distilbert_v1.yaml
+              subPath: cat_distilbert_v1.yaml
+            - name: training-data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: "2"
+              memory: "8Gi"
+            limits:
+              cpu: "8"
+              memory: "32Gi"
+      volumes:
+        - name: runtime-config
+          configMap:
+            name: training-candidate-config
+        - name: training-data
+          persistentVolumeClaim:
+            claimName: training-state-pvc

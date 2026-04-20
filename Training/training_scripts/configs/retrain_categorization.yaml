@@ -30,7 +30,7 @@ current_features_path: /data/current_features.parquet
 # Promotion
 mlflow_tracking_uri: http://CHAMELEON_FLOATING_IP:8000
 experiment_name: categorization_retrain
-registry_path: /data/model_registry
+registry_path: s3://mlflow/registry
 
 # State persistence
 state_file: /data/retrain_state_categorization.json

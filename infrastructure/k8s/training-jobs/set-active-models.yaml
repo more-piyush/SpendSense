@@ -1,0 +1,36 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: set-active-models
+  namespace: firefly-platform
+spec:
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: set-active-models
+          image: spendsense/training:latest
+          imagePullPolicy: IfNotPresent
+          command:
+            - "python"
+            - "set_active_models.py"
+            - "--registry-path"
+            - "s3://mlflow/registry"
+            - "--categorization"
+            - "cat_distilbert_v1"
+            - "--trend"
+            - "trend_xgb_v1"
+          volumeMounts:
+            - name: training-data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "1"
+              memory: "1Gi"
+      volumes:
+        - name: training-data
+          persistentVolumeClaim:
+            claimName: training-state-pvc

@@ -4,6 +4,11 @@
 
 run_name: "trend_rf_baseline"
 model_type: random_forest
+task_type: trend
+model_id: trend_rf_baseline
+model_family: random_forest
+training_mode: initial
+registry_path: s3://mlflow/registry
 
 # Random Forest settings
 n_estimators: 100

@@ -517,7 +517,7 @@ def run_promotion_gating(config: dict, run_id: str) -> dict:
     promote_config = {
         "model_type": config["model_type"],
         "mlflow_tracking_uri": config.get("mlflow_tracking_uri", "http://localhost:5000"),
-        "registry_path": config.get("registry_path", "/data/model_registry"),
+        "registry_path": config.get("registry_path", "s3://mlflow/registry"),
     }
 
     config_path = "/tmp/promote_config.yaml"

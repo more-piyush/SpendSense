@@ -4,6 +4,11 @@
 
 run_name: "cat_baseline_logistic_regression"
 model_type: logistic_regression
+task_type: categorization
+model_id: cat_logreg_baseline
+model_family: logistic_regression
+training_mode: initial
+registry_path: s3://mlflow/registry
 
 # TF-IDF settings
 max_features: 10000

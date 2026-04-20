@@ -8,4 +8,4 @@ model_type: DISTILBERT_CATEGORIZATION
 mlflow_tracking_uri: http://CHAMELEON_FLOATING_IP:8000
 
 # Registry
-registry_path: /data/model_registry
+registry_path: s3://mlflow/registry

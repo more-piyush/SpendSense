@@ -38,6 +38,7 @@ from pathlib import Path
 import yaml
 import mlflow
 from mlflow.tracking import MlflowClient
+from utils import load_json_document, save_json_document
 
 
 # ============================================================
@@ -79,20 +80,36 @@ class ModelRegistry:
       artifact_path, status, predecessor_id
     """
 
-    def __init__(self, registry_path: str):
+    def __init__(self, registry_path: str, s3_config: dict = None):
         self.registry_path = registry_path
-        self.registry_file = os.path.join(registry_path, "registry.json")
-        os.makedirs(registry_path, exist_ok=True)
-
-        if os.path.exists(self.registry_file):
-            with open(self.registry_file, "r") as f:
-                self.models = json.load(f)
+        self.s3_config = s3_config or {
+            "s3": {
+                "endpoint_url": os.environ.get("MLFLOW_S3_ENDPOINT_URL"),
+                "region": "us-east-1",
+            }
+        }
+        if registry_path.startswith("s3://"):
+            self.registry_file = registry_path.rstrip("/") + "/registry.json"
         else:
-            self.models = []
+            self.registry_file = os.path.join(registry_path, "registry.json")
+            os.makedirs(registry_path, exist_ok=True)
+
+        payload = load_json_document(self.registry_file, default=[], config=self.s3_config)
+        if isinstance(payload, dict):
+            self.models = payload.get("models", [])
+        else:
+            self.models = payload
 
     def _save(self):
-        with open(self.registry_file, "w") as f:
-            json.dump(self.models, f, indent=2, default=str)
+        save_json_document(
+            self.registry_file,
+            {
+                "schema_version": 2,
+                "updated_at": datetime.utcnow().isoformat(),
+                "models": self.models,
+            },
+            config=self.s3_config,
+        )
 
     def register(
         self,
@@ -350,7 +367,7 @@ def evaluate_for_promotion(config: dict, run_id: str) -> dict:
     metrics = get_mlflow_metrics(run_id, tracking_uri)
 
     # Get production model metrics for relative comparisons
-    registry = ModelRegistry(config.get("registry_path", "/data/model_registry"))
+    registry = ModelRegistry(config.get("registry_path", "s3://mlflow/registry"), s3_config=config)
     prod_model = registry.get_production_model(model_type)
     prod_metrics = prod_model["eval_metrics"] if prod_model else None
 
@@ -369,12 +386,12 @@ def promote_model(config: dict, run_id: str) -> dict:
     """Evaluate gates and promote model through the lifecycle."""
     tracking_uri = config.get("mlflow_tracking_uri", "http://localhost:5000")
     model_type = config["model_type"]
-    registry_path = config.get("registry_path", "/data/model_registry")
+    registry_path = config.get("registry_path", "s3://mlflow/registry")
 
     metrics = get_mlflow_metrics(run_id, tracking_uri)
     params = get_mlflow_params(run_id, tracking_uri)
 
-    registry = ModelRegistry(registry_path)
+    registry = ModelRegistry(registry_path, s3_config=config)
 
     # Check if already registered
     existing = registry.get_latest(model_type)
@@ -439,8 +456,8 @@ def rollback_model(config: dict, run_id: str = None) -> dict:
     Otherwise, retire the current production model.
     """
     model_type = config["model_type"]
-    registry_path = config.get("registry_path", "/data/model_registry")
-    registry = ModelRegistry(registry_path)
+    registry_path = config.get("registry_path", "s3://mlflow/registry")
+    registry = ModelRegistry(registry_path, s3_config=config)
 
     if run_id:
         # Find model by run_id

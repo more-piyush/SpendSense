@@ -4,6 +4,11 @@
 
 run_name: "trend_xgb_v1"
 model_type: xgboost
+task_type: trend
+model_id: trend_xgb_v1
+model_family: xgboost
+training_mode: initial
+registry_path: s3://mlflow/registry
 
 # XGBoost hyperparameters
 objective: reg:squarederror

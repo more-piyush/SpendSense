@@ -43,6 +43,7 @@ COPY promote_model.py .
 COPY retrain.py .
 COPY explain.py .
 COPY generate_training_data.py .
+COPY set_active_models.py .
 COPY configs/ configs/
 
 ENTRYPOINT ["python"]
