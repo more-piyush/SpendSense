@@ -65,9 +65,10 @@
                             <div class="row">
                                 <div id="transaction-info" class="col-lg-4">
                                     <transaction-description
-                                        v-model="transaction.description"
+                                        :value="transaction.description"
                                         :error="transaction.errors.description"
                                         :index="index"
+                                        @input="updateDescription(index, $event)"
                                     >
                                     </transaction-description>
                                     <account-select
@@ -125,11 +126,12 @@
                                 </div>
                                 <div id="amount-info" class="col-lg-4">
                                     <amount
-                                        v-model="transaction.amount"
+                                        :value="transaction.amount"
                                         :destination="transaction.destination_account"
                                         :error="transaction.errors.amount"
                                         :source="transaction.source_account"
                                         :transactionType="transactionType"
+                                        @input="updateAmount(index, $event)"
                                     ></amount>
                                     <foreign-amount
                                         v-model="transaction.foreign_amount"
@@ -148,9 +150,13 @@
                                         :transactionType="transactionType"
                                     ></budget>
                                     <category
-                                        v-model="transaction.category"
+                                        :value="transaction.category"
                                         :error="transaction.errors.category"
-                                        :transactionType="transactionType"
+                                        :prediction-category="transaction.prediction.category"
+                                        :prediction-confidence="transaction.prediction.confidence"
+                                        :prediction-loading="transaction.prediction.loading"
+                                        @input="updateCategory(index, $event)"
+                                        @apply:prediction="applyPredictedCategory(index)"
                                     ></category>
                                     <piggy-bank
                                         v-model="transaction.piggy_bank"
@@ -279,6 +285,21 @@ export default {
         }
     },
     methods: {
+        updateDescription(index, value) {
+            this.transactions[index].description = value;
+            this.scheduleCategoryPrediction(index);
+        },
+        updateAmount(index, value) {
+            this.transactions[index].amount = value;
+            this.scheduleCategoryPrediction(index);
+        },
+        updateCategory(index, value) {
+            this.transactions[index].category = value;
+        },
+        applyPredictedCategory(index) {
+            this.transactions[index].category = this.transactions[index].prediction.category;
+            this.logCategoryFeedback(index, 'accepted', this.transactions[index].prediction.category);
+        },
         prefillSourceAccount() {
             if (0 === window.sourceId) {
                 return;
@@ -286,7 +307,7 @@ export default {
             this.getAccount(window.sourceId, 'source_account');
         },
         prefillDestinationAccount() {
-            if (0 === destinationId) {
+            if (0 === window.destinationId) {
                 return;
             }
             this.getAccount(window.destinationId, 'destination_account');
@@ -321,6 +342,214 @@ export default {
                 'mortgage': 'Mortgage'
             };
             return arr[searchType] ?? searchType;
+        },
+        normalizeAmount(value) {
+            if ('string' !== typeof value) {
+                return value;
+            }
+            if (1 === (value.match(/\,/g) || []).length) {
+                return value.replace(',', '.');
+            }
+            return value;
+        },
+        getPredictionCurrency(transaction) {
+            let transactionType = this.transactionType;
+            if (!transactionType) {
+                transactionType = '';
+            }
+            transactionType = transactionType.toLowerCase();
+
+            if (['withdrawal', 'reconciliation', 'transfer'].includes(transactionType)) {
+                return transaction.source_account.currency_code || null;
+            }
+            if ('deposit' === transactionType) {
+                if (['debt', 'loan', 'mortgage'].includes((transaction.source_account.type || '').toLowerCase())) {
+                    return transaction.source_account.currency_code || null;
+                }
+                return transaction.destination_account.currency_code || null;
+            }
+            return transaction.source_account.currency_code || transaction.destination_account.currency_code || null;
+        },
+        clearPrediction(index) {
+            if ('undefined' === typeof this.transactions[index]) {
+                return;
+            }
+            this.transactions[index].prediction = {
+                category: '',
+                confidence: null,
+                loading: false,
+                signature: '',
+                transaction_id: '',
+                model_family: '',
+                model_version: '',
+                predicted_categories: [],
+                max_confidence: null,
+                abstained: false,
+                timestamp: '',
+                inference_time_ms: null,
+                feedback_history: {},
+            };
+        },
+        buildFeedbackPayload(index, action, finalCategory = null) {
+            const transaction = this.transactions[index];
+            if ('undefined' === typeof transaction) {
+                return null;
+            }
+
+            const prediction = transaction.prediction || {};
+            if ('' === (prediction.category || '').trim()) {
+                return null;
+            }
+            if ('' === (prediction.model_family || '').trim() || '' === (prediction.model_version || '').trim()) {
+                return null;
+            }
+
+            const payload = {
+                task: 'categorization',
+                transaction_id: prediction.transaction_id || null,
+                user_id: null,
+                model_family: prediction.model_family,
+                model_version: prediction.model_version,
+                action: action,
+                predicted_value: {
+                    category: prediction.category,
+                    confidence: prediction.confidence,
+                    predicted_categories: prediction.predicted_categories || [],
+                    max_confidence: prediction.max_confidence,
+                    abstained: prediction.abstained,
+                },
+                final_value: null,
+                metadata: {
+                    source: 'firefly-ui',
+                    description: transaction.description || '',
+                    amount: this.normalizeAmount(transaction.amount || ''),
+                    currency: this.getPredictionCurrency(transaction),
+                    feedback_origin: 'create-transaction',
+                },
+                timestamp: new Date().toISOString(),
+            };
+
+            if (null !== finalCategory) {
+                payload.final_value = {
+                    category: finalCategory,
+                };
+            }
+
+            return payload;
+        },
+        logCategoryFeedback(index, action, finalCategory = null) {
+            const transaction = this.transactions[index];
+            if ('undefined' === typeof transaction || 'undefined' === typeof window.categoryFeedbackUrl) {
+                return Promise.resolve();
+            }
+
+            const payload = this.buildFeedbackPayload(index, action, finalCategory);
+            if (null === payload) {
+                return Promise.resolve();
+            }
+
+            const dedupeKey = JSON.stringify({
+                action: action,
+                predicted: payload.predicted_value.category,
+                final: finalCategory,
+            });
+            if (transaction.prediction.feedback_history[dedupeKey]) {
+                return Promise.resolve();
+            }
+
+            return axios.post(window.categoryFeedbackUrl, payload).then(() => {
+                transaction.prediction.feedback_history[dedupeKey] = true;
+            }).catch(error => {
+                console.warn('Could not log SpendSense category feedback');
+                console.warn(error);
+            });
+        },
+        flushPredictionFeedback() {
+            const feedbackRequests = [];
+
+            this.transactions.forEach((transaction, index) => {
+                const predictionCategory = ((transaction.prediction || {}).category || '').trim();
+                if ('' === predictionCategory) {
+                    return;
+                }
+
+                const finalCategory = (transaction.category || '').trim();
+                if ('' === finalCategory) {
+                    feedbackRequests.push(this.logCategoryFeedback(index, 'dismissed', null));
+                    return;
+                }
+
+                if (finalCategory === predictionCategory) {
+                    feedbackRequests.push(this.logCategoryFeedback(index, 'accepted', finalCategory));
+                    return;
+                }
+
+                feedbackRequests.push(this.logCategoryFeedback(index, 'overridden', finalCategory));
+            });
+
+            return Promise.allSettled(feedbackRequests);
+        },
+        buildPredictionPayload(index) {
+            const transaction = this.transactions[index];
+            if ('undefined' === typeof transaction) {
+                return null;
+            }
+            const description = (transaction.description || '').trim();
+            const normalizedAmount = this.normalizeAmount(transaction.amount || '');
+            const amount = parseFloat(normalizedAmount);
+
+            if ('' === description || Number.isNaN(amount)) {
+                return null;
+            }
+
+            return {
+                description: description,
+                amount: amount,
+                currency: this.getPredictionCurrency(transaction),
+                country: null,
+            };
+        },
+        requestCategoryPrediction(index) {
+            const payload = this.buildPredictionPayload(index);
+            if (null === payload || 'undefined' === typeof window.categoryPredictionUrl) {
+                this.clearPrediction(index);
+                return;
+            }
+
+            const signature = JSON.stringify(payload);
+            if (signature === this.transactions[index].prediction.signature) {
+                return;
+            }
+
+            this.transactions[index].prediction.loading = true;
+            axios.post(window.categoryPredictionUrl, payload).then(response => {
+                const data = response.data || {};
+                this.transactions[index].prediction.loading = false;
+                this.transactions[index].prediction.signature = signature;
+                this.transactions[index].prediction.category = data.suggested_category || '';
+                this.transactions[index].prediction.confidence = data.confidence || data.max_confidence || null;
+                this.transactions[index].prediction.transaction_id = data.transaction_id || '';
+                this.transactions[index].prediction.model_family = data.model_family || '';
+                this.transactions[index].prediction.model_version = data.model_version || '';
+                this.transactions[index].prediction.predicted_categories = data.predicted_categories || [];
+                this.transactions[index].prediction.max_confidence = data.max_confidence || null;
+                this.transactions[index].prediction.abstained = !!data.abstained;
+                this.transactions[index].prediction.timestamp = data.timestamp || '';
+                this.transactions[index].prediction.inference_time_ms = data.inference_time_ms || null;
+                this.transactions[index].prediction.feedback_history = {};
+            }).catch(() => {
+                this.transactions[index].prediction.loading = false;
+                this.transactions[index].prediction.category = '';
+                this.transactions[index].prediction.confidence = null;
+            });
+        },
+        scheduleCategoryPrediction(index) {
+            if ('undefined' !== typeof this.predictionTimers[index]) {
+                clearTimeout(this.predictionTimers[index]);
+            }
+            this.predictionTimers[index] = setTimeout(() => {
+                this.requestCategoryPrediction(index);
+            }, 450);
         },
         convertData: function () {
             // console.log('Now in convertData()');
@@ -500,24 +729,26 @@ export default {
             let button = $('#submitButton');
             button.prop("disabled", true);
 
-            axios.post(uri, data).then(response => {
-                // console.log('Did a successful POST');
-                // this method will ultimately send the user on (or not).
-                if (0 === this.collectAttachmentData(response)) {
-                    // console.log('Will now go to redirectUser()');
-                    this.redirectUser(response.data.data.id, response.data.data);
-                }
-            }).catch(error => {
-                // give user errors things back.
-                // something something render errors.
+            this.flushPredictionFeedback().finally(() => {
+                axios.post(uri, data).then(response => {
+                    // console.log('Did a successful POST');
+                    // this method will ultimately send the user on (or not).
+                    if (0 === this.collectAttachmentData(response)) {
+                        // console.log('Will now go to redirectUser()');
+                        this.redirectUser(response.data.data.id, response.data.data);
+                    }
+                }).catch(error => {
+                    // give user errors things back.
+                    // something something render errors.
 
-                console.error('Error in transaction submission.');
-                console.error(error);
-                this.parseErrors(error.response.data);
+                    console.error('Error in transaction submission.');
+                    console.error(error);
+                    this.parseErrors(error.response.data);
 
-                // something.
-                // console.log('enable button again.')
-                button.removeAttr('disabled');
+                    // something.
+                    // console.log('enable button again.')
+                    button.removeAttr('disabled');
+                });
             });
 
             if (e) {
@@ -796,6 +1027,21 @@ export default {
                 date: "",
                 amount: "",
                 category: "",
+                prediction: {
+                    category: "",
+                    confidence: null,
+                    loading: false,
+                    signature: "",
+                    transaction_id: "",
+                    model_family: "",
+                    model_version: "",
+                    predicted_categories: [],
+                    max_confidence: null,
+                    abstained: false,
+                    timestamp: "",
+                    inference_time_ms: null,
+                    feedback_history: {},
+                },
                 piggy_bank: 0,
                 errors: {
                     source_account: [],
@@ -883,6 +1129,9 @@ export default {
         },
         setTransactionType: function (type) {
             this.transactionType = type;
+            for (let i = 0; i < this.transactions.length; i++) {
+                this.scheduleCategoryPrediction(i);
+            }
         },
 
         deleteTransaction: function (index, event) {
@@ -932,6 +1181,7 @@ export default {
                 // force types on destination selector.
                 this.transactions[index].destination_account.allowed_types = window.allowedOpposingTypes.source[model.type];
             }
+            this.scheduleCategoryPrediction(index);
             //console.log('Transactions:');
             //console.log(this.transactions);
         },
@@ -962,6 +1212,7 @@ export default {
                 // force types on destination selector.
                 this.transactions[index].source_account.allowed_types = window.allowedOpposingTypes.destination[model.type];
             }
+            this.scheduleCategoryPrediction(index);
         },
         clearSource: function (index) {
             // console.log('clearSource(' + index + ')');
@@ -985,6 +1236,7 @@ export default {
             if (this.transactions[index].destination_account) {
                 this.selectedDestinationAccount(index, this.transactions[index].destination_account);
             }
+            this.scheduleCategoryPrediction(index);
         },
         clearDestination: function (index) {
             // console.log('clearDestination(' + index + ')');
@@ -1008,6 +1260,7 @@ export default {
             if (this.transactions[index].source_account) {
                 this.selectedSourceAccount(index, this.transactions[index].source_account);
             }
+            this.scheduleCategoryPrediction(index);
         }
     },
 
@@ -1029,6 +1282,7 @@ export default {
             applyRules: true,
             resetButtonDisabled: true,
             attachmentCount: 0,
+            predictionTimers: {},
         };
     },
 }

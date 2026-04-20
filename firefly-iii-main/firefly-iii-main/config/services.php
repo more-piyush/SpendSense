@@ -65,4 +65,8 @@ return [
         'token'      => 'fake_token',
         'user_token' => 'fake_token',
     ],
+    'spendsense' => [
+        'serving_url' => env('SPENDSENSE_SERVING_URL', ''),
+        'timeout'     => (float) env('SPENDSENSE_SERVING_TIMEOUT', 3.0),
+    ],
 ];

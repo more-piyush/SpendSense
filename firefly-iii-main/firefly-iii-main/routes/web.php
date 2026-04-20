@@ -1307,6 +1307,8 @@ Route::group(
         // create group:
         Route::get('create/{objectType}', ['uses' => 'Transaction\CreateController@create', 'as' => 'create']);
         Route::post('store', ['uses' => 'Transaction\CreateController@store', 'as' => 'store']);
+        Route::post('predict-category', ['uses' => 'Transaction\PredictionController@category', 'as' => 'predict-category']);
+        Route::post('feedback-category', ['uses' => 'Transaction\PredictionController@feedback', 'as' => 'feedback-category']);
 
         // clone group
         Route::post('clone', ['uses' => 'Transaction\CreateController@cloneGroup', 'as' => 'clone']);

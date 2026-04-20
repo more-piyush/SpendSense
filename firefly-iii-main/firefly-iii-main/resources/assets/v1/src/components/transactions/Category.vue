@@ -67,6 +67,16 @@
       <ul v-for="error in this.error" class="list-unstyled">
         <li class="text-danger">{{ error }}</li>
       </ul>
+      <p v-if="predictionLoading" class="help-block text-muted">
+        Predicting category...
+      </p>
+      <div v-if="showPrediction" class="alert alert-info small">
+        <strong>Suggested category:</strong> {{ predictionCategory }}
+        <span v-if="formattedConfidence">({{ formattedConfidence }})</span>
+        <button class="btn btn-xs btn-primary pull-right" type="button" @click="applyPrediction">
+          Apply
+        </button>
+      </div>
     </div>
   </div>
 </template>
@@ -78,6 +88,18 @@ export default {
     value: String,
     inputName: String,
     error: Array,
+    predictionCategory: {
+      type: String,
+      default: '',
+    },
+    predictionConfidence: {
+      type: [Number, String],
+      default: null,
+    },
+    predictionLoading: {
+      type: Boolean,
+      default: false,
+    },
     accountName: {
       type: String,
       default: ''
@@ -98,6 +120,23 @@ export default {
   mounted() {
     this.target = this.$refs.input;
     this.categoryAutoCompleteURI = document.getElementsByTagName('base')[0].href + "api/v1/autocomplete/categories?query=";
+  },
+  computed: {
+    formattedConfidence() {
+      if (null === this.predictionConfidence || '' === this.predictionConfidence) {
+        return '';
+      }
+      const numeric = Number(this.predictionConfidence);
+      if (Number.isNaN(numeric)) {
+        return '';
+      }
+      return `${Math.round(numeric * 100)}% confidence`;
+    },
+    showPrediction() {
+      return !this.predictionLoading
+          && '' !== this.predictionCategory
+          && this.predictionCategory !== this.value;
+    },
   },
   methods: {
     hasError: function () {
@@ -165,6 +204,12 @@ export default {
         return;
       }
       this.$emit('input', this.name.name);
+    },
+    applyPrediction() {
+      this.name = this.predictionCategory;
+      this.$refs.input.value = this.predictionCategory;
+      this.$emit('input', this.predictionCategory);
+      this.$emit('apply:prediction', this.predictionCategory);
     },
     handleEnter: function (e) {
       // TODO feels sloppy
