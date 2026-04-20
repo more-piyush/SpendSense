@@ -541,8 +541,19 @@ def update_active_model_selection(registry_path: str, config: dict = None) -> di
     registry_file = _registry_file_path(registry_path, "registry.json")
     active_models_file = _registry_file_path(registry_path, "active_models.json")
     config = config or {}
+    registry_config = {
+        "s3": {
+            "endpoint_url": (
+                config.get("s3", {}).get("endpoint_url")
+                or os.environ.get("MLFLOW_S3_ENDPOINT_URL")
+            ),
+            "region": config.get("s3", {}).get("region", "us-east-1"),
+            "access_key": config.get("s3", {}).get("access_key"),
+            "secret_key": config.get("s3", {}).get("secret_key"),
+        }
+    }
 
-    entries = _load_registry_entries(registry_file, config=config)
+    entries = _load_registry_entries(registry_file, config=registry_config)
     current = load_json_document(
         active_models_file,
         default={
@@ -550,7 +561,7 @@ def update_active_model_selection(registry_path: str, config: dict = None) -> di
             "active_trend_model": None,
             "updated_at": datetime.utcnow().isoformat(),
         },
-        config=config,
+        config=registry_config,
     )
 
     best_categorization = _choose_best_candidate(entries, "categorization")
@@ -576,8 +587,8 @@ def update_active_model_selection(registry_path: str, config: dict = None) -> di
         )
         entry["updated_at"] = datetime.utcnow().isoformat()
 
-    save_json_document(active_models_file, current, config=config)
-    _save_registry_entries(registry_file, entries, config=config)
+    save_json_document(active_models_file, current, config=registry_config)
+    _save_registry_entries(registry_file, entries, config=registry_config)
 
     print(
         "[REGISTRY] Auto-selected active models: "
