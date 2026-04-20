@@ -15,7 +15,7 @@ spec:
           restartPolicy: OnFailure
           containers:
             - name: monthly-retrain
-              image: spendsense/training:latest
+              image: docker.io/spendsense/training:registry-v1
               imagePullPolicy: IfNotPresent
               command: ["python", "retrain.py", "/app/runtime-config/retrain_trend.yaml"]
               env:

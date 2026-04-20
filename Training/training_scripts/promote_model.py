@@ -390,6 +390,10 @@ def promote_model(config: dict, run_id: str) -> dict:
 
     metrics = get_mlflow_metrics(run_id, tracking_uri)
     params = get_mlflow_params(run_id, tracking_uri)
+    run = MlflowClient(tracking_uri=tracking_uri).get_run(run_id)
+    artifact_path = run.data.tags.get("registry_model_artifact_path", f"mlflow://{run_id}/model")
+    if artifact_path == f"mlflow://{run_id}/model" and str(run.info.artifact_uri or "").startswith("s3://"):
+        artifact_path = run.info.artifact_uri.rstrip("/") + "/model"
 
     registry = ModelRegistry(registry_path, s3_config=config)
 
@@ -414,7 +418,7 @@ def promote_model(config: dict, run_id: str) -> dict:
             hyperparameters={k: v for k, v in params.items() if not k.startswith("env_")},
             training_data_hash=params.get("data_hash", "unknown"),
             feature_version=params.get("feature_version", "1.0"),
-            artifact_path=f"mlflow://{run_id}/model",
+            artifact_path=artifact_path,
             mlflow_run_id=run_id,
         )
 

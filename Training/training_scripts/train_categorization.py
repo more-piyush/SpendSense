@@ -56,6 +56,7 @@ from utils import (
     TrainingTimer,
     log_peak_memory,
     register_candidate_model,
+    tag_primary_model_artifact,
 )
 
 warnings.filterwarnings("ignore")
@@ -382,7 +383,8 @@ def train_baseline(config, train_df, val_df, test_df, label_binarizer):
     }
 
     mlflow.log_metrics(metrics)
-    mlflow.sklearn.log_model(clf, "model")
+    model_info = mlflow.sklearn.log_model(clf, "model")
+    tag_primary_model_artifact(model_info)
     mlflow.log_artifact(config["_config_path"])
 
     # --- Rich Artifacts ---
@@ -629,11 +631,12 @@ def train_distilbert(config, train_df, val_df, test_df, label_binarizer,
             "classes": list(label_binarizer.classes_),
         }, model_path)
         artifacts = {"model_path": model_path}
-        mlflow.pyfunc.log_model(
+        model_info = mlflow.pyfunc.log_model(
             artifact_path="model",
             python_model=mlflow.pyfunc.PythonModel(),
             artifacts=artifacts,
         )
+        tag_primary_model_artifact(model_info)
     mlflow.log_artifact(config["_config_path"])
 
     # Log peak memory

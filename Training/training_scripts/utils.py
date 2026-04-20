@@ -19,6 +19,7 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 from datetime import datetime
+from mlflow.tracking import MlflowClient
 
 
 def load_config(config_path: str) -> dict:
@@ -34,13 +35,67 @@ def setup_mlflow(config: dict) -> str:
     """Configure MLflow tracking and start a run. Returns the run ID."""
     tracking_uri = config.get("mlflow_tracking_uri", "http://localhost:8000")
     experiment_name = config.get("experiment_name", "default")
+    artifact_location = config.get("artifact_location")
+    direct_experiment_name = config.get(
+        "direct_artifact_experiment_name",
+        f"{experiment_name}_s3",
+    )
 
     mlflow.set_tracking_uri(tracking_uri)
-    mlflow.set_experiment(experiment_name)
+    client = MlflowClient(tracking_uri=tracking_uri)
+
+    chosen_experiment_name = experiment_name
+    experiment = client.get_experiment_by_name(experiment_name)
+
+    if artifact_location:
+        if experiment is None:
+            client.create_experiment(experiment_name, artifact_location=artifact_location)
+            experiment = client.get_experiment_by_name(experiment_name)
+        elif not str(experiment.artifact_location or "").startswith("s3://"):
+            chosen_experiment_name = direct_experiment_name
+            direct_experiment = client.get_experiment_by_name(chosen_experiment_name)
+            if direct_experiment is None:
+                client.create_experiment(
+                    chosen_experiment_name,
+                    artifact_location=artifact_location,
+                )
+                direct_experiment = client.get_experiment_by_name(chosen_experiment_name)
+            experiment = direct_experiment
+        else:
+            chosen_experiment_name = experiment_name
+
+    mlflow.set_experiment(chosen_experiment_name)
     mlflow.enable_system_metrics_logging()
     print(f"[INFO] MLflow tracking URI: {tracking_uri}")
-    print(f"[INFO] MLflow experiment: {experiment_name}")
+    print(f"[INFO] MLflow experiment: {chosen_experiment_name}")
+    if experiment is not None:
+        print(f"[INFO] MLflow artifact location: {experiment.artifact_location}")
     return tracking_uri
+
+
+def tag_primary_model_artifact(model_info):
+    """Attach direct artifact metadata for the primary logged model to the active run."""
+    active_run = mlflow.active_run()
+    if active_run is None or model_info is None:
+        return
+
+    model_id = getattr(model_info, "model_id", None)
+    model_uri = getattr(model_info, "model_uri", None)
+
+    if model_id:
+        mlflow.set_tag("registry_model_id", model_id)
+
+    artifact_uri = active_run.info.artifact_uri or ""
+    if artifact_uri.startswith("s3://") and model_id:
+        suffix = f"/{active_run.info.run_id}/artifacts"
+        if artifact_uri.endswith(suffix):
+            experiment_root = artifact_uri[: -len(suffix)]
+        else:
+            experiment_root = artifact_uri.rsplit("/artifacts", 1)[0]
+        direct_model_uri = f"{experiment_root}/models/{model_id}/artifacts"
+        mlflow.set_tag("registry_model_artifact_path", direct_model_uri)
+    elif model_uri:
+        mlflow.set_tag("registry_model_artifact_path", model_uri)
 
 
 def log_environment_info():
@@ -387,6 +442,19 @@ def register_candidate_model(config: dict, run_id: str, metrics: dict) -> dict:
     model_family = _infer_model_family(config)
     version = _next_model_version(entries, model_id)
     artifact_subpath = config.get("artifact_subpath", "model")
+    tracking_uri = config.get("mlflow_tracking_uri", "http://localhost:5000")
+
+    artifact_path = f"mlflow://{run_id}/{artifact_subpath}"
+    try:
+        run = MlflowClient(tracking_uri=tracking_uri).get_run(run_id)
+        artifact_path = run.data.tags.get("registry_model_artifact_path", artifact_path)
+        if (
+            artifact_path == f"mlflow://{run_id}/{artifact_subpath}"
+            and str(run.info.artifact_uri or "").startswith("s3://")
+        ):
+            artifact_path = run.info.artifact_uri.rstrip("/") + f"/{artifact_subpath}"
+    except Exception as exc:
+        print(f"[WARN] Could not resolve direct artifact path for run {run_id}: {exc}")
 
     hyperparameters = {
         k: v for k, v in config.items()
@@ -406,7 +474,7 @@ def register_candidate_model(config: dict, run_id: str, metrics: dict) -> dict:
         "run_name": config.get("run_name"),
         "mlflow_run_id": run_id,
         "experiment_name": config.get("experiment_name"),
-        "artifact_path": f"mlflow://{run_id}/{artifact_subpath}",
+        "artifact_path": artifact_path,
         "data_path": config.get("data_path"),
         "training_data_hash": hyperparameters.get("data_hash", "unknown"),
         "feature_version": hyperparameters.get("feature_version", "1.0"),

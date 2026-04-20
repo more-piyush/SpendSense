@@ -38,6 +38,8 @@ data:
 
     mlflow_tracking_uri: http://mlflow.firefly-platform.svc.cluster.local:5000
     experiment_name: categorization_retrain
+    direct_artifact_experiment_name: categorization_retrain_s3
+    artifact_location: s3://mlflow/experiments/categorization_retrain_s3
     registry_path: s3://mlflow/registry
 
     state_file: /data/retrain_state_categorization.json
@@ -76,6 +78,8 @@ data:
 
     mlflow_tracking_uri: http://mlflow.firefly-platform.svc.cluster.local:5000
     experiment_name: trend_retrain
+    direct_artifact_experiment_name: trend_retrain_s3
+    artifact_location: s3://mlflow/experiments/trend_retrain_s3
     registry_path: s3://mlflow/registry
 
     state_file: /data/retrain_state_trend.json

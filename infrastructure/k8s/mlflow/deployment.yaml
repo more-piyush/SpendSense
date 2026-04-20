@@ -24,7 +24,8 @@ spec:
               --host 0.0.0.0
               --port 5000
               --backend-store-uri postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres.firefly-platform.svc.cluster.local:5432/firefly
-              --artifacts-destination s3://mlflow/
+              --no-serve-artifacts
+              --default-artifact-root s3://mlflow/experiments
           env:
             - name: POSTGRES_USER
               valueFrom:

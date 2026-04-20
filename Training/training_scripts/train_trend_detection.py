@@ -46,6 +46,7 @@ from utils import (
     TrainingTimer,
     log_peak_memory,
     register_candidate_model,
+    tag_primary_model_artifact,
 )
 
 warnings.filterwarnings("ignore")
@@ -162,7 +163,8 @@ def train_random_forest(config, X_train, y_train, X_val, y_val, X_test, y_test):
                      json.dumps([f[0] for f in top_features]))
     print(f"[INFO] Top 5 features: {[f'{k}: {v:.4f}' for k, v in top_features]}")
 
-    mlflow.sklearn.log_model(model, "model")
+    model_info = mlflow.sklearn.log_model(model, "model")
+    tag_primary_model_artifact(model_info)
 
     # --- Rich Artifacts ---
     # Feature importance bar chart
@@ -231,7 +233,8 @@ def train_xgboost(config, X_train, y_train, X_val, y_val, X_test, y_test):
                      json.dumps([f[0] for f in top_features]))
     print(f"[INFO] Top 5 features: {[f'{k}: {v:.1f}' for k, v in top_features]}")
 
-    mlflow.xgboost.log_model(model, "model")
+    model_info = mlflow.xgboost.log_model(model, "model")
+    tag_primary_model_artifact(model_info)
 
     # --- Rich Artifacts ---
     # Feature importance bar chart (gain-based)
@@ -364,7 +367,8 @@ def train_xgboost_optuna(config, X_train, y_train, X_val, y_val, X_test, y_test)
         )
 
     metrics = evaluate_regression(best_model, X_val, y_val, X_test, y_test, "xgb_optuna")
-    mlflow.xgboost.log_model(best_model, "model")
+    model_info = mlflow.xgboost.log_model(best_model, "model")
+    tag_primary_model_artifact(model_info)
 
     # --- Rich Artifacts ---
     # Optuna optimization history

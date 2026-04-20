@@ -25,3 +25,5 @@ s3:
 # MLflow
 mlflow_tracking_uri: http://CHAMELEON_FLOATING_IP:8000
 experiment_name: trend_detection
+direct_artifact_experiment_name: trend_detection_s3
+artifact_location: s3://mlflow/experiments/trend_detection_s3
