@@ -1,26 +1,17 @@
 from fastapi import APIRouter, Depends
+from service.dependencies import get_model_manager
 
-from service.dependencies import get_metrics_registry
-from service.metrics import MetricsRegistry
-
-router = APIRouter(tags=["system"])
-
+router = APIRouter()
 
 @router.get("/health")
 def health():
-    return {"status": "ok", "service": "spendsense-serving"}
-
+    return {"status": "ok"}
 
 @router.get("/ready")
-def ready():
+def ready(manager = Depends(get_model_manager)):
+    models = manager.get_active_models()
     return {
         "status": "ready",
-        "active_models_source": "active_models.json",
+        "categorization_model": models["categorization"]["model_id"],
+        "trend_model": models["trend"]["model_id"],
     }
-
-
-@router.get("/metrics/summary")
-def metrics_summary(
-    metrics: MetricsRegistry = Depends(get_metrics_registry),
-):
-    return metrics.snapshot()
