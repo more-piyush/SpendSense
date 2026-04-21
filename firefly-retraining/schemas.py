@@ -1,7 +1,15 @@
-"""Pydantic models that validate every row from production-logs.
+"""Pydantic models that validate rows from production-logs.
 
-Any row that fails validation is rejected in Step 2 of the pipeline.
-These models are the machine-enforceable version of SCHEMA_CONTRACT.md.
+Serving writes two event streams:
+  - interactions/{categorization,trend}  → inference events (monitoring only)
+  - feedback/{categorization,trend}      → labeled events (used for retraining)
+
+This pipeline reads the feedback/* events. The inference/* events don't carry
+the user's correction, so they can't be used to retrain supervised models.
+
+The trend feedback envelope is provisional — it mirrors the categorization
+envelope we have a real sample of. Tighten once a real feedback/trend sample
+is available.
 """
 from datetime import datetime
 from typing import List, Literal, Optional
@@ -12,74 +20,109 @@ import config
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Categorization event
+# Categorization feedback event (confirmed against real log sample)
 # ─────────────────────────────────────────────────────────────────────────────
-class CategorizationEvent(BaseModel):
-    """One inference-time prediction event written by the serving service."""
+class CategorizationPredictedValue(BaseModel):
+    category: str = Field(..., min_length=1)
+    confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
 
-    event_id: str = Field(..., min_length=8)
-    timestamp: datetime
-    user_id: str = Field(..., pattern=r"^sha256:[a-f0-9]{64}$")
-    transaction_description: str = Field(..., min_length=1)
-    amount: float = Field(..., ge=0)
+
+class CategorizationFinalValue(BaseModel):
+    category: str = Field(..., min_length=1)
+
+
+class CategorizationMetadata(BaseModel):
+    source: Optional[str] = None
+    description: str = Field(..., min_length=1)
+    amount: str                                         # logged as string
     currency: str = Field(..., pattern=r"^[A-Z]{3}$")
-    country: str = Field(..., pattern=r"^[A-Z]{2}$")
-    predicted_categories: List[str] = Field(..., min_length=1)
-    prediction_probabilities: List[float]
-    model_version: str = Field(..., pattern=r"^\d+\.\d+\.\d+$")
-    user_action: Literal["accepted", "overridden", "abstained", "ignored"]
-    final_category: Optional[str] = None
+    country: Optional[str] = None                       # absent in current logs
+    feedback_origin: Optional[str] = None
 
-    @field_validator("prediction_probabilities")
-    @classmethod
-    def probs_in_range(cls, v):
-        if any(p < 0.0 or p > 1.0 for p in v):
-            raise ValueError("prediction_probabilities values must be in [0, 1]")
-        return v
+
+class CategorizationFeedback(BaseModel):
+    task: Literal["categorization"]
+    transaction_id: str = Field(..., min_length=1)
+    user_id: str = Field(..., min_length=1)
+    model_family: str = Field(..., min_length=1)
+    model_version: str = Field(..., pattern=r"^\d+\.\d+\.\d+$")
+    action: Literal["accepted", "overridden", "abstained", "ignored"]
+    predicted_value: Optional[CategorizationPredictedValue] = None
+    final_value: Optional[CategorizationFinalValue] = None
+    metadata: CategorizationMetadata
+    timestamp: datetime
 
     @model_validator(mode="after")
-    def check_lengths_and_final_category(self):
-        if len(self.predicted_categories) != len(self.prediction_probabilities):
-            raise ValueError(
-                "predicted_categories and prediction_probabilities must be same length"
-            )
-        if self.user_action == "ignored":
-            if self.final_category is not None:
-                raise ValueError("final_category must be null when user_action='ignored'")
+    def check_final_value(self):
+        if self.action == "ignored":
+            if self.final_value is not None:
+                raise ValueError("final_value must be null when action='ignored'")
         else:
-            if not self.final_category:
+            if self.final_value is None:
                 raise ValueError(
-                    f"final_category required when user_action='{self.user_action}'"
+                    f"final_value required when action='{self.action}'"
                 )
         return self
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Anomaly feedback event
-# ─────────────────────────────────────────────────────────────────────────────
-class AnomalyFeedbackEvent(BaseModel):
-    """One anomaly alert + (optional) user feedback."""
+class CategorizationFeedbackEvent(BaseModel):
+    event_id: str = Field(..., min_length=1)
+    recorded_at: datetime
+    event_type: Literal["feedback/categorization"]
+    feedback: CategorizationFeedback
 
-    event_id: str = Field(..., min_length=8)
-    timestamp: datetime
-    user_id: str = Field(..., pattern=r"^sha256:[a-f0-9]{64}$")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Trend feedback event (PROVISIONAL — verify against real log sample)
+# ─────────────────────────────────────────────────────────────────────────────
+class TrendPredictedValue(BaseModel):
+    predicted_next_month_spend: float
+    anomaly_detection: dict = Field(default_factory=dict)
+    trend_analysis: dict = Field(default_factory=dict)
+
+
+class TrendFinalValue(BaseModel):
+    user_feedback: Literal["helpful", "not_useful", "expected"]
+    actual_next_month_spend: Optional[float] = None
+
+
+class TrendFeedback(BaseModel):
+    task: Literal["trend_detection"]
+    user_id: str = Field(..., min_length=1)
     category: str = Field(..., min_length=1)
-    month: str = Field(..., pattern=r"^\d{4}-\d{2}$")
-    feature_vector: dict
-    anomaly_score: float = Field(..., ge=0.0, le=1.0)
-    predicted_spend: float
-    actual_spend: float
-    direction: Literal[-1, 1]
-    magnitude_pct: float
-    alert_severity: Literal["low", "medium", "high"]
-    top_factors: Optional[List[str]] = Field(default=None, max_length=3)
-    user_feedback: Optional[Literal["helpful", "not_useful", "expected"]] = None
+    period: str = Field(..., pattern=r"^\d{4}-\d{2}$")
+    model_family: str = Field(..., min_length=1)
     model_version: str = Field(..., pattern=r"^\d+\.\d+\.\d+$")
+    action: Literal["helpful", "not_useful", "expected", "ignored"]
+    features: dict
+    predicted_value: Optional[TrendPredictedValue] = None
+    final_value: Optional[TrendFinalValue] = None
+    metadata: dict = Field(default_factory=dict)
+    timestamp: datetime
 
-    @field_validator("feature_vector")
+    @field_validator("features")
     @classmethod
-    def vector_has_all_20_keys(cls, v):
+    def features_has_20_keys(cls, v):
         missing = set(config.ANOMALY_FEATURE_KEYS) - set(v.keys())
         if missing:
-            raise ValueError(f"feature_vector missing keys: {sorted(missing)}")
+            raise ValueError(f"features missing keys: {sorted(missing)}")
         return v
+
+    @model_validator(mode="after")
+    def check_final_value(self):
+        if self.action == "ignored":
+            if self.final_value is not None:
+                raise ValueError("final_value must be null when action='ignored'")
+        else:
+            if self.final_value is None:
+                raise ValueError(
+                    f"final_value required when action='{self.action}'"
+                )
+        return self
+
+
+class TrendFeedbackEvent(BaseModel):
+    event_id: str = Field(..., min_length=1)
+    recorded_at: datetime
+    event_type: Literal["feedback/trend"]
+    feedback: TrendFeedback

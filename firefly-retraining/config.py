@@ -15,8 +15,13 @@ BUCKET_TRAINING_DATA   = "training-data"
 BUCKET_RETRAINING_DATA = "retraining-data"
 
 # ── Path prefixes within production-logs ─────────────────────────────────────
-PREFIX_CATEGORIZATION_LOGS = "categorization"
-PREFIX_ANOMALY_FEEDBACK    = "anomaly_feedback"
+# Serving writes two event streams. The retraining pipeline reads feedback/*
+# (labeled events). interactions/* (raw inference events) are kept for drift
+# monitoring only — they have no user labels.
+PREFIX_CATEGORIZATION_FEEDBACK  = "feedback/categorization"
+PREFIX_TREND_FEEDBACK           = "feedback/trend"
+PREFIX_CATEGORIZATION_INFERENCE = "interactions/categorization"
+PREFIX_TREND_INFERENCE          = "interactions/trend"
 
 # ── Path prefixes within training-data (existing CE Survey pipeline) ─────────
 PREFIX_CE_CATEGORIZATION = "ce_survey/categorization"

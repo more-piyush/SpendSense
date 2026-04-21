@@ -7,9 +7,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-import duckdb
-from minio import Minio
-
 import config
 
 
@@ -36,7 +33,8 @@ def setup_logging(name: str) -> logging.Logger:
 # ─────────────────────────────────────────────────────────────────────────────
 # MinIO client
 # ─────────────────────────────────────────────────────────────────────────────
-def get_minio_client() -> Minio:
+def get_minio_client():
+    from minio import Minio
     if not config.MINIO_ACCESS_KEY or not config.MINIO_SECRET_KEY:
         raise RuntimeError(
             "MINIO_ACCESS_KEY / MINIO_SECRET_KEY not set — check your .env"
@@ -49,7 +47,7 @@ def get_minio_client() -> Minio:
     )
 
 
-def ensure_bucket(client: Minio, bucket: str) -> None:
+def ensure_bucket(client, bucket: str) -> None:
     if not client.bucket_exists(bucket):
         client.make_bucket(bucket)
 
@@ -57,8 +55,9 @@ def ensure_bucket(client: Minio, bucket: str) -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 # DuckDB connection with MinIO (httpfs) configured
 # ─────────────────────────────────────────────────────────────────────────────
-def get_duckdb() -> duckdb.DuckDBPyConnection:
+def get_duckdb():
     """Return a DuckDB connection that can read s3:// from our MinIO."""
+    import duckdb
     con = duckdb.connect()
     con.execute("INSTALL httpfs; LOAD httpfs;")
     con.execute(f"SET s3_endpoint='{config.MINIO_ENDPOINT}';")
@@ -92,7 +91,7 @@ def version_folder(now: Optional[datetime] = None) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 # Upload helpers
 # ─────────────────────────────────────────────────────────────────────────────
-def upload_file(client: Minio, bucket: str, key: str, local_path: Path) -> None:
+def upload_file(client, bucket: str, key: str, local_path: Path) -> None:
     client.fput_object(bucket, key, str(local_path))
 
 
@@ -102,7 +101,7 @@ def write_json(path: Path, obj: dict) -> None:
 
 
 def update_latest_pointer(
-    client: Minio, task: str, version: str, built_at: datetime
+    client, task: str, version: str, built_at: datetime
 ) -> None:
     """Write <bucket>/<task>/latest.json so the training team has one stable
     path to check for the newest dataset."""
