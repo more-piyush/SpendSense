@@ -152,6 +152,7 @@
                                     <category
                                         :value="transaction.category"
                                         :error="transaction.errors.category"
+                                        :prediction-context="buildPredictionPayload(index)"
                                         :prediction-category="transaction.prediction.category"
                                         :prediction-confidence="transaction.prediction.confidence"
                                         :prediction-loading="transaction.prediction.loading"

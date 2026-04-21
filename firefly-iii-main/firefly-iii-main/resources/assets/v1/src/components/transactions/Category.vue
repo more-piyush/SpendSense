@@ -88,6 +88,10 @@ export default {
     value: String,
     inputName: String,
     error: Array,
+    predictionContext: {
+      type: Object,
+      default: null,
+    },
     predictionCategory: {
       type: String,
       default: '',
@@ -148,7 +152,25 @@ export default {
       return escapedName.replace(new RegExp(("" + inputValue), 'i'), '<b>$&</b>');
     },
     aSyncFunction: function (query, done) {
-      axios.get(this.categoryAutoCompleteURI + query)
+      const params = {
+        query: query,
+      };
+      if (null !== this.predictionContext && 'object' === typeof this.predictionContext) {
+        if ('string' === typeof this.predictionContext.description && '' !== this.predictionContext.description.trim()) {
+          params.description = this.predictionContext.description;
+        }
+        if (null !== this.predictionContext.amount && 'undefined' !== typeof this.predictionContext.amount && '' !== `${this.predictionContext.amount}`) {
+          params.amount = this.predictionContext.amount;
+        }
+        if ('string' === typeof this.predictionContext.currency && '' !== this.predictionContext.currency.trim()) {
+          params.currency = this.predictionContext.currency;
+        }
+        if ('string' === typeof this.predictionContext.country && '' !== this.predictionContext.country.trim()) {
+          params.country = this.predictionContext.country;
+        }
+      }
+
+      axios.get(this.categoryAutoCompleteURI, {params})
           .then(res => {
             done(res.data);
           })
