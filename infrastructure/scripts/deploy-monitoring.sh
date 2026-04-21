@@ -2,6 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/load-env.sh"
 K8S_DIR="${SCRIPT_DIR}/../k8s/monitoring"
 
 kubectl apply -f "${K8S_DIR}/namespace.yaml"

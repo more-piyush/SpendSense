@@ -89,6 +89,110 @@ export FLOATING_IP=<YOUR_FLOATING_IP>
 ./scripts/seed-data.sh
 ```
 
+## Single-VM full deployment
+
+For a manually created Ubuntu VM with an attached data volume, the repository now
+includes a one-command bootstrap that:
+
+- updates the OS
+- installs Docker, K3s, Helm, Ansible, and Terraform
+- mounts and formats the attached volume if needed
+- builds and imports all required application images
+- deploys the core platform, raw-data seed, one-off data bootstrap, initial training, active-model selection, serving restart, monitoring, and validation
+
+Preparation:
+
+```bash
+cd infrastructure
+cp config/deploy.env.example config/deploy.env
+```
+
+Edit `config/deploy.env` and set at minimum:
+
+- `FLOATING_IP`
+- `DATA_VOLUME_DEVICE`
+- `MINIO_ROOT_USER` if you do not want the default
+- any secrets you do not want auto-generated
+
+Then run from the repository root:
+
+```bash
+bash infrastructure/scripts/deploy-all.sh infrastructure/config/deploy.env
+```
+
+The deployment writes a timestamped log under `infrastructure/logs/` and prints
+phase-by-phase status as it runs. Initial training jobs are launched in
+parallel; after the configured warmup, the script attempts active-model
+selection and restarts the serving deployment once models are ready.
+
+Run that command from a normal user with `sudo` access rather than from a
+fully root-owned shell so the kubeconfig and Docker group setup land on the
+intended operator account.
+
+All infrastructure scripts now read the same env file by default:
+
+```bash
+infrastructure/config/deploy.env
+```
+
+That means you can also run individual steps like these without re-exporting
+variables:
+
+```bash
+bash infrastructure/scripts/create-secrets-from-env.sh
+bash infrastructure/scripts/deploy-core.sh
+bash infrastructure/scripts/run-initial-training.sh
+bash infrastructure/scripts/deploy-monitoring.sh
+bash infrastructure/scripts/validate-core.sh
+```
+
+## GitHub Actions deployment
+
+The repository also includes a manual GitHub Actions workflow at
+`.github/workflows/deploy-infrastructure.yml` for the Chameleon
+Terraform + Ansible + application deployment path.
+
+It performs these phases:
+
+- renders `terraform.tfvars`, `group_vars/all.yml`, and `config/deploy.env`
+- runs Terraform to provision the nodes and floating IP
+- runs Ansible `pre_k8s`, `k8s`, `post_k8s`, and optionally `argocd`
+- syncs the repository to the control-plane node
+- runs `infrastructure/scripts/deploy-remote-stack.sh` on the control plane to build images, deploy the platform, bootstrap data, start initial training, activate models, restart serving, deploy monitoring, and validate the stack
+
+Required GitHub secrets and variables:
+
+- Secret: `OPENSTACK_CLOUDS_YAML`
+- Secret: `CHAMELEON_SSH_PRIVATE_KEY`
+- Secret: `TF_RESERVATION_ID`
+- Secret: `K3S_TOKEN`
+- Secret: `POSTGRES_PASSWORD`
+- Secret: `MINIO_ROOT_PASSWORD`
+- Variable: `TF_SUFFIX`
+- Variable: `TF_KEYPAIR_NAME`
+- Variable: `TF_FLOATING_IP_POOL`
+- Variable: `ANSIBLE_SSH_USER`
+- Variable: `DATA_VOLUME_DEVICE`
+- Variable: `DATA_VOLUME_MOUNT_PATH`
+- Variable: `DATA_VOLUME_FILESYSTEM`
+
+Optional variables:
+
+- `TF_IMAGE_NAME`
+- `TF_DATA_VOLUME_NAME`
+- `TF_NODES_YAML`
+- `ARGOCD_REPO_URL`
+- `ARGOCD_TARGET_REVISION`
+- `INITIAL_TRAINING_WARMUP_SECONDS`
+- `ACTIVE_MODEL_RETRY_SECONDS`
+- `ACTIVE_MODEL_MAX_WAIT_SECONDS`
+
+`FIREFLY_APP_KEY` is optional in both the local env file and the GitHub Actions
+workflow. If you leave it blank, the deployment flow generates a valid Firefly
+APP key automatically.
+
+Run it from the Actions tab with `workflow_dispatch`.
+
 ## External access (Floating IP)
 
 - Firefly III: `http://<FLOATING_IP>:30080`

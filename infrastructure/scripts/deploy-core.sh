@@ -2,10 +2,11 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/load-env.sh"
 K8S_DIR="${SCRIPT_DIR}/../k8s"
 
 if [[ -z "${FLOATING_IP:-}" ]]; then
-  echo "[ERROR] FLOATING_IP is required. Example: export FLOATING_IP=129.114.x.x"
+  echo "[ERROR] FLOATING_IP is required. Set it in infrastructure/config/deploy.env or export it."
   exit 1
 fi
 
@@ -51,6 +52,7 @@ kubectl apply -f "${K8S_DIR}/serving/service.yaml"
 kubectl apply -f "${K8S_DIR}/data/configmap.yaml"
 kubectl apply -f "${K8S_DIR}/data/cronjob.yaml"
 
+kubectl apply -f "${K8S_DIR}/training/candidate-configmap.yaml"
 kubectl apply -f "${K8S_DIR}/training/configmap.yaml"
 kubectl apply -f "${K8S_DIR}/retraining/configmap.yaml"
 kubectl apply -f "${K8S_DIR}/cronjobs/nightly-eval.yaml"

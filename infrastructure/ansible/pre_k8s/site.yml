@@ -9,11 +9,24 @@
           - apt-transport-https
           - ca-certificates
           - curl
+          - docker.io
           - gnupg
           - jq
           - nfs-common
         state: present
         update_cache: true
+
+    - name: Ensure Docker service is enabled and running
+      ansible.builtin.service:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: Add SSH user to docker group
+      ansible.builtin.user:
+        name: "{{ ansible_user }}"
+        groups: docker
+        append: true
 
     - name: Disable swap immediately
       ansible.builtin.command: swapoff -a

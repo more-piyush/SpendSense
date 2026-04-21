@@ -1,0 +1,204 @@
+---
+- name: Bootstrap a single SpendSense VM
+  hosts: localhost
+  connection: local
+  become: true
+  gather_facts: true
+  vars:
+    deploy_user: "{{ lookup('env', 'DEPLOY_USER') | default(ansible_env.SUDO_USER, true) | default(ansible_env.USER, true) }}"
+    deploy_home: "{{ '/root' if deploy_user == 'root' else '/home/' + deploy_user }}"
+    data_volume_device: "{{ lookup('env', 'DATA_VOLUME_DEVICE') | default('/dev/vdb', true) }}"
+    data_volume_mount_path: "{{ lookup('env', 'DATA_VOLUME_MOUNT_PATH') | default('/data', true) }}"
+    data_volume_filesystem: "{{ lookup('env', 'DATA_VOLUME_FILESYSTEM') | default('ext4', true) }}"
+    k3s_install_channel: "{{ lookup('env', 'K3S_INSTALL_CHANNEL') | default('stable', true) }}"
+    k3s_server_extra_args: "{{ lookup('env', 'K3S_SERVER_EXTRA_ARGS') | default('--write-kubeconfig-mode 644 --disable traefik', true) }}"
+    install_terraform: "{{ lookup('env', 'INSTALL_TERRAFORM') | default('true', true) | bool }}"
+  tasks:
+    - name: Install base packages
+      ansible.builtin.apt:
+        update_cache: true
+        state: present
+        install_recommends: false
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - git
+          - gnupg
+          - jq
+          - lsb-release
+          - make
+          - nfs-common
+          - python3
+          - python3-pip
+          - rsync
+          - software-properties-common
+          - unzip
+
+    - name: Disable swap immediately
+      ansible.builtin.command: swapoff -a
+      changed_when: false
+
+    - name: Remove swap entries from fstab
+      ansible.builtin.replace:
+        path: /etc/fstab
+        regexp: '^(.*\sswap\s+sw\s+.*)$'
+        replace: '# \1'
+
+    - name: Persist kernel modules for Kubernetes
+      ansible.builtin.copy:
+        dest: /etc/modules-load.d/k8s.conf
+        mode: "0644"
+        content: |
+          overlay
+          br_netfilter
+
+    - name: Load overlay module
+      ansible.builtin.command: modprobe overlay
+      changed_when: false
+
+    - name: Load br_netfilter module
+      ansible.builtin.command: modprobe br_netfilter
+      changed_when: false
+
+    - name: Configure sysctl for Kubernetes
+      ansible.builtin.copy:
+        dest: /etc/sysctl.d/99-kubernetes-cri.conf
+        mode: "0644"
+        content: |
+          net.bridge.bridge-nf-call-iptables = 1
+          net.bridge.bridge-nf-call-ip6tables = 1
+          net.ipv4.ip_forward = 1
+
+    - name: Apply sysctl settings
+      ansible.builtin.command: sysctl --system
+      changed_when: false
+
+    - name: Wait for attached data volume
+      ansible.builtin.wait_for:
+        path: "{{ data_volume_device }}"
+        timeout: 120
+
+    - name: Detect existing filesystem on attached data volume
+      ansible.builtin.command: blkid -o value -s TYPE {{ data_volume_device }}
+      register: data_volume_fs
+      failed_when: false
+      changed_when: false
+
+    - name: Create filesystem on attached data volume if needed
+      ansible.builtin.command: mkfs.{{ data_volume_filesystem }} -F {{ data_volume_device }}
+      when: data_volume_fs.stdout | trim == ""
+
+    - name: Ensure data mount path exists
+      ansible.builtin.file:
+        path: "{{ data_volume_mount_path }}"
+        state: directory
+        mode: "0755"
+
+    - name: Mount attached data volume
+      ansible.posix.mount:
+        path: "{{ data_volume_mount_path }}"
+        src: "{{ data_volume_device }}"
+        fstype: "{{ data_volume_filesystem }}"
+        state: mounted
+
+    - name: Install Docker engine
+      ansible.builtin.apt:
+        state: present
+        install_recommends: false
+        name:
+          - docker.io
+
+    - name: Start and enable Docker
+      ansible.builtin.service:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: Add deploy user to docker group
+      ansible.builtin.user:
+        name: "{{ deploy_user }}"
+        groups: docker
+        append: true
+
+    - name: Install K3s server
+      ansible.builtin.shell: >
+        curl -sfL https://get.k3s.io |
+        INSTALL_K3S_CHANNEL={{ k3s_install_channel }}
+        sh -s - server {{ k3s_server_extra_args }}
+      args:
+        creates: /etc/systemd/system/k3s.service
+
+    - name: Ensure kubectl shim exists
+      ansible.builtin.file:
+        src: /usr/local/bin/k3s
+        dest: /usr/local/bin/kubectl
+        state: link
+        force: true
+
+    - name: Wait for kubeconfig to be created
+      ansible.builtin.wait_for:
+        path: /etc/rancher/k3s/k3s.yaml
+        timeout: 120
+
+    - name: Ensure deploy user's kube directory exists
+      ansible.builtin.file:
+        path: "{{ deploy_home }}/.kube"
+        state: directory
+        owner: "{{ deploy_user }}"
+        group: "{{ deploy_user }}"
+        mode: "0700"
+
+    - name: Install kubeconfig for deploy user
+      ansible.builtin.copy:
+        src: /etc/rancher/k3s/k3s.yaml
+        dest: "{{ deploy_home }}/.kube/config"
+        remote_src: true
+        owner: "{{ deploy_user }}"
+        group: "{{ deploy_user }}"
+        mode: "0600"
+
+    - name: Wait for single-node cluster readiness
+      ansible.builtin.command: /usr/local/bin/kubectl get nodes
+      register: kubectl_nodes
+      retries: 20
+      delay: 15
+      until: kubectl_nodes.rc == 0
+      changed_when: false
+
+    - name: Install Helm
+      ansible.builtin.shell: curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+      args:
+        creates: /usr/local/bin/helm
+
+    - name: Install Ansible
+      ansible.builtin.apt:
+        state: present
+        install_recommends: false
+        name:
+          - ansible
+
+    - name: Add HashiCorp apt key
+      ansible.builtin.shell: |
+        set -e
+        curl -fsSL https://apt.releases.hashicorp.com/gpg | gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
+      args:
+        creates: /usr/share/keyrings/hashicorp-archive-keyring.gpg
+      when: install_terraform
+
+    - name: Add HashiCorp apt repository
+      ansible.builtin.copy:
+        dest: /etc/apt/sources.list.d/hashicorp.list
+        mode: "0644"
+        content: |
+          deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com {{ ansible_distribution_release }} main
+      when: install_terraform
+
+    - name: Install Terraform
+      ansible.builtin.apt:
+        update_cache: true
+        state: present
+        install_recommends: false
+        name:
+          - terraform
+      when: install_terraform

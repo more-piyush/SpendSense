@@ -2,6 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/load-env.sh"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 DATA_DIR="${REPO_ROOT}/Data"
 
@@ -27,7 +28,16 @@ if ! command -v kubectl >/dev/null 2>&1; then
 fi
 
 if ! command -v docker >/dev/null 2>&1; then
-  echo "[ERROR] docker is required."
+  if [[ -z "${DOCKER_CMD:-}" ]]; then
+    echo "[ERROR] docker is required."
+    exit 1
+  fi
+fi
+
+DOCKER_CMD="${DOCKER_CMD:-docker}"
+
+if ! command -v "${DOCKER_CMD%% *}" >/dev/null 2>&1; then
+  echo "[ERROR] ${DOCKER_CMD} is not available."
   exit 1
 fi
 
@@ -64,7 +74,7 @@ trap 'rm -f "${UPLOAD_SCRIPT}"' EXIT
   printf "mc ls 'local/%s/raw'\n" "${MINIO_BUCKET}"
 } > "${UPLOAD_SCRIPT}"
 
-docker run --rm \
+${DOCKER_CMD} run --rm \
   --network host \
   -v "${DATA_DIR}:/seed:ro" \
   -v "${UPLOAD_SCRIPT}:/tmp/upload.sh:ro" \

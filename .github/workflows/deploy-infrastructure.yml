@@ -1,0 +1,245 @@
+name: Deploy Infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      deploy_monitoring:
+        description: "Deploy monitoring stack"
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      apply_argocd:
+        description: "Run Argo CD bootstrap playbook"
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "true"
+          - "false"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      TF_IN_AUTOMATION: "true"
+      ANSIBLE_FORCE_COLOR: "true"
+      PY_COLORS: "1"
+      REMOTE_REPO_PATH: "~/SpendSense"
+      TF_DIR: infrastructure/tf/kvm
+      ANSIBLE_DIR: infrastructure/ansible
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Ansible and SSH helpers
+        run: |
+          python -m pip install --upgrade pip
+          pip install "ansible>=9,<11"
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends openssh-client rsync sshpass
+
+      - name: Configure OpenStack clouds.yaml
+        env:
+          OPENSTACK_CLOUDS_YAML: ${{ secrets.OPENSTACK_CLOUDS_YAML }}
+        run: |
+          mkdir -p "${HOME}/.config/openstack"
+          printf '%s\n' "${OPENSTACK_CLOUDS_YAML}" > "${HOME}/.config/openstack/clouds.yaml"
+          chmod 600 "${HOME}/.config/openstack/clouds.yaml"
+
+      - name: Configure SSH key
+        env:
+          CHAMELEON_SSH_PRIVATE_KEY: ${{ secrets.CHAMELEON_SSH_PRIVATE_KEY }}
+        run: |
+          mkdir -p "${HOME}/.ssh"
+          printf '%s\n' "${CHAMELEON_SSH_PRIVATE_KEY}" > "${HOME}/.ssh/id_ed25519"
+          chmod 600 "${HOME}/.ssh/id_ed25519"
+          printf 'Host *\n  StrictHostKeyChecking no\n  UserKnownHostsFile=/dev/null\n' > "${HOME}/.ssh/config"
+          chmod 600 "${HOME}/.ssh/config"
+
+      - name: Render Terraform, Ansible, and deployment config
+        env:
+          TF_SUFFIX: ${{ vars.TF_SUFFIX }}
+          TF_KEYPAIR_NAME: ${{ vars.TF_KEYPAIR_NAME }}
+          TF_RESERVATION_ID: ${{ secrets.TF_RESERVATION_ID }}
+          TF_IMAGE_NAME: ${{ vars.TF_IMAGE_NAME }}
+          TF_FLOATING_IP_POOL: ${{ vars.TF_FLOATING_IP_POOL }}
+          TF_DATA_VOLUME_NAME: ${{ vars.TF_DATA_VOLUME_NAME }}
+          TF_NODES_YAML: ${{ vars.TF_NODES_YAML }}
+          ANSIBLE_SSH_USER: ${{ vars.ANSIBLE_SSH_USER }}
+          K3S_TOKEN: ${{ secrets.K3S_TOKEN }}
+          KUBE_CONFIG_LOCAL_PATH: /tmp/spendsense-chameleon.yaml
+          DATA_VOLUME_DEVICE: ${{ vars.DATA_VOLUME_DEVICE }}
+          DATA_VOLUME_MOUNT_PATH: ${{ vars.DATA_VOLUME_MOUNT_PATH }}
+          DATA_VOLUME_FILESYSTEM: ${{ vars.DATA_VOLUME_FILESYSTEM }}
+          K3S_INSTALL_CHANNEL: ${{ vars.K3S_INSTALL_CHANNEL }}
+          K3S_SERVER_EXTRA_ARGS: ${{ vars.K3S_SERVER_EXTRA_ARGS }}
+          ARGOCD_REPO_URL: ${{ vars.ARGOCD_REPO_URL }}
+          ARGOCD_TARGET_REVISION: ${{ vars.ARGOCD_TARGET_REVISION }}
+          DEPLOY_MONITORING: ${{ github.event.inputs.deploy_monitoring }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          FIREFLY_APP_KEY: ${{ secrets.FIREFLY_APP_KEY }}
+          MINIO_ROOT_USER: ${{ secrets.MINIO_ROOT_USER }}
+          MINIO_ROOT_PASSWORD: ${{ secrets.MINIO_ROOT_PASSWORD }}
+          INITIAL_TRAINING_WARMUP_SECONDS: ${{ vars.INITIAL_TRAINING_WARMUP_SECONDS }}
+          ACTIVE_MODEL_RETRY_SECONDS: ${{ vars.ACTIVE_MODEL_RETRY_SECONDS }}
+          ACTIVE_MODEL_MAX_WAIT_SECONDS: ${{ vars.ACTIVE_MODEL_MAX_WAIT_SECONDS }}
+          INSTALL_TERRAFORM: "false"
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+          import secrets
+          from pathlib import Path
+
+          def val(name, default=""):
+              return os.environ.get(name, default)
+
+          firefly_app_key = val("FIREFLY_APP_KEY")
+          if not firefly_app_key:
+              firefly_app_key = f"base64:{secrets.token_urlsafe(32)}"
+
+          tfvars = f'''suffix = "{val("TF_SUFFIX")}"
+          key = "{val("TF_KEYPAIR_NAME")}"
+          reservation = "{val("TF_RESERVATION_ID")}"
+          ssh_user = "{val("ANSIBLE_SSH_USER", "cc")}"
+          image_name = "{val("TF_IMAGE_NAME", "CC-Ubuntu24.04")}"
+          data_volume_name = "{val("TF_DATA_VOLUME_NAME")}"
+          floating_ip_pool = "{val("TF_FLOATING_IP_POOL", "public")}"
+          nodes = {val("TF_NODES_YAML", "{\\n  node1 = \\"192.168.1.11\\"\\n}")}'''
+
+          ansible_all = f'''---
+          ansible_user: {val("ANSIBLE_SSH_USER", "cc")}
+          k3s_token: "{val("K3S_TOKEN")}"
+          kubeconfig_local_path: "{val("KUBE_CONFIG_LOCAL_PATH", "/tmp/spendsense-chameleon.yaml")}"
+          k3s_install_channel: "{val("K3S_INSTALL_CHANNEL", "stable")}"
+          k3s_server_extra_args: "{val("K3S_SERVER_EXTRA_ARGS", "--write-kubeconfig-mode 644 --disable traefik")}"
+          data_volume_device: "{val("DATA_VOLUME_DEVICE", "/dev/vdb")}"
+          data_volume_mount_path: "{val("DATA_VOLUME_MOUNT_PATH", "/data")}"
+          data_volume_filesystem: "{val("DATA_VOLUME_FILESYSTEM", "ext4")}"
+          argocd_namespace: "argocd"
+          argocd_install_manifest: "https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml"
+          argocd_repo_url: "{val("ARGOCD_REPO_URL")}"
+          argocd_target_revision: "{val("ARGOCD_TARGET_REVISION", "main")}"
+          argocd_app_name: "spendsense-platform"
+          argocd_app_path: "infrastructure/k8s"
+          argocd_destination_namespace: "firefly-platform"
+          argocd_destination_server: "https://kubernetes.default.svc"
+          '''
+
+          deploy_env = f'''FLOATING_IP="TO_BE_FILLED_BY_TERRAFORM"
+          DATA_VOLUME_DEVICE="{val("DATA_VOLUME_DEVICE", "/dev/vdb")}"
+          DATA_VOLUME_MOUNT_PATH="{val("DATA_VOLUME_MOUNT_PATH", "/data")}"
+          DATA_VOLUME_FILESYSTEM="{val("DATA_VOLUME_FILESYSTEM", "ext4")}"
+          K3S_INSTALL_CHANNEL="{val("K3S_INSTALL_CHANNEL", "stable")}"
+          K3S_SERVER_EXTRA_ARGS="{val("K3S_SERVER_EXTRA_ARGS", "--write-kubeconfig-mode 644 --disable traefik")}"
+          INSTALL_TERRAFORM="{val("INSTALL_TERRAFORM", "false")}"
+          POSTGRES_PASSWORD="{val("POSTGRES_PASSWORD")}"
+          FIREFLY_APP_KEY="{firefly_app_key}"
+          MINIO_ROOT_USER="{val("MINIO_ROOT_USER", "minioadmin")}"
+          MINIO_ROOT_PASSWORD="{val("MINIO_ROOT_PASSWORD")}"
+          INITIAL_TRAINING_WARMUP_SECONDS="{val("INITIAL_TRAINING_WARMUP_SECONDS", "600")}"
+          ACTIVE_MODEL_RETRY_SECONDS="{val("ACTIVE_MODEL_RETRY_SECONDS", "120")}"
+          ACTIVE_MODEL_MAX_WAIT_SECONDS="{val("ACTIVE_MODEL_MAX_WAIT_SECONDS", "7200")}"
+          DEPLOY_MONITORING="{val("DEPLOY_MONITORING", "true")}"
+          '''
+
+          Path("infrastructure/tf/kvm/terraform.tfvars").write_text(tfvars, encoding="utf-8")
+          Path("infrastructure/ansible/group_vars/all.yml").write_text(ansible_all, encoding="utf-8")
+          Path("infrastructure/config/deploy.env").write_text(deploy_env, encoding="utf-8")
+          PY
+
+      - name: Terraform init
+        working-directory: ${{ env.TF_DIR }}
+        run: terraform init
+
+      - name: Terraform plan
+        working-directory: ${{ env.TF_DIR }}
+        run: terraform plan -out=tfplan
+
+      - name: Terraform apply
+        working-directory: ${{ env.TF_DIR }}
+        run: terraform apply -auto-approve tfplan
+
+      - name: Capture Terraform outputs
+        id: tf
+        working-directory: ${{ env.TF_DIR }}
+        run: |
+          CONTROL_PLANE_IP="$(terraform output -raw control_plane_public_ip)"
+          INVENTORY_PATH="$(terraform output -raw ansible_inventory_path)"
+          echo "control_plane_ip=${CONTROL_PLANE_IP}" >> "${GITHUB_OUTPUT}"
+          echo "inventory_path=${INVENTORY_PATH}" >> "${GITHUB_OUTPUT}"
+          CONTROL_PLANE_IP="${CONTROL_PLANE_IP}" python - <<'PY'
+          import os
+          from pathlib import Path
+          p = Path("../../../infrastructure/config/deploy.env")
+          lines = p.read_text(encoding="utf-8").splitlines()
+          out = []
+          for line in lines:
+              if line.startswith('FLOATING_IP='):
+                  out.append(f'FLOATING_IP="{os.environ["CONTROL_PLANE_IP"]}"')
+              else:
+                  out.append(line)
+          p.write_text("\n".join(out) + "\n", encoding="utf-8")
+          PY
+
+      - name: Wait for SSH access
+        env:
+          CONTROL_PLANE_IP: ${{ steps.tf.outputs.control_plane_ip }}
+          ANSIBLE_SSH_USER: ${{ vars.ANSIBLE_SSH_USER }}
+        run: |
+          for attempt in $(seq 1 30); do
+            if ssh -i "${HOME}/.ssh/id_ed25519" "${ANSIBLE_SSH_USER}@${CONTROL_PLANE_IP}" 'echo ssh-ok'; then
+              exit 0
+            fi
+            sleep 20
+          done
+          exit 1
+
+      - name: Run Ansible pre_k8s
+        working-directory: ${{ env.ANSIBLE_DIR }}
+        run: ansible-playbook pre_k8s/site.yml
+
+      - name: Run Ansible k8s
+        working-directory: ${{ env.ANSIBLE_DIR }}
+        run: ansible-playbook k8s/site.yml
+
+      - name: Run Ansible post_k8s
+        working-directory: ${{ env.ANSIBLE_DIR }}
+        run: ansible-playbook post_k8s/site.yml
+
+      - name: Optionally run Ansible argocd
+        if: ${{ github.event.inputs.apply_argocd == 'true' }}
+        working-directory: ${{ env.ANSIBLE_DIR }}
+        run: ansible-playbook argocd/site.yml
+
+      - name: Sync repository to control plane
+        env:
+          CONTROL_PLANE_IP: ${{ steps.tf.outputs.control_plane_ip }}
+          ANSIBLE_SSH_USER: ${{ vars.ANSIBLE_SSH_USER }}
+        run: |
+          rsync -az --delete --exclude '.git' \
+            -e "ssh -i ${HOME}/.ssh/id_ed25519" \
+            ./ "${ANSIBLE_SSH_USER}@${CONTROL_PLANE_IP}:${REMOTE_REPO_PATH}/"
+
+      - name: Run full remote platform deployment
+        env:
+          CONTROL_PLANE_IP: ${{ steps.tf.outputs.control_plane_ip }}
+          ANSIBLE_SSH_USER: ${{ vars.ANSIBLE_SSH_USER }}
+        run: |
+          ssh -i "${HOME}/.ssh/id_ed25519" "${ANSIBLE_SSH_USER}@${CONTROL_PLANE_IP}" \
+            "cd ${REMOTE_REPO_PATH} && bash infrastructure/scripts/deploy-remote-stack.sh"

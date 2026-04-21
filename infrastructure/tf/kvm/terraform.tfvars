@@ -1,6 +1,6 @@
-suffix      = "spendsense"
+suffix      = "proj20"
 key         = "mlops_proj20"
-reservation = "ca122638-97d8-49b5-9955-8cac9e0d4ae8"
+reservation = "ee9cd5a0-8d14-4f2e-b140-c143ac43c5fb"
 
 ssh_user   = "cc"
 image_name = "CC-Ubuntu24.04"
