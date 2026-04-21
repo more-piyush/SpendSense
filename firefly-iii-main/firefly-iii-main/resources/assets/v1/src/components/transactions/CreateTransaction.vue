@@ -537,6 +537,14 @@ export default {
                 this.transactions[index].prediction.timestamp = data.timestamp || '';
                 this.transactions[index].prediction.inference_time_ms = data.inference_time_ms || null;
                 this.transactions[index].prediction.feedback_history = {};
+
+                // Make successful predictions visible even when the suggestion box is missed:
+                // only auto-fill if the user has not already chosen a category.
+                if ('' === (this.transactions[index].category || '').trim()
+                    && '' !== this.transactions[index].prediction.category.trim()
+                    && false === this.transactions[index].prediction.abstained) {
+                    this.transactions[index].category = this.transactions[index].prediction.category;
+                }
             }).catch(() => {
                 this.transactions[index].prediction.loading = false;
                 this.transactions[index].prediction.category = '';
