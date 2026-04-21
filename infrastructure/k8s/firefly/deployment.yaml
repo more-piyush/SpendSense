@@ -13,10 +13,18 @@ spec:
       labels:
         app: firefly
     spec:
+      securityContext:
+        fsGroup: 33
+        fsGroupChangePolicy: "OnRootMismatch"
       containers:
         - name: firefly
           image: spendsense/firefly-custom:latest
           imagePullPolicy: IfNotPresent
+          securityContext:
+            runAsUser: 33
+            runAsGroup: 33
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
           ports:
             - containerPort: 8080
           envFrom:
