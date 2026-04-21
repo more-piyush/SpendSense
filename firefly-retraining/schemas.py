@@ -46,7 +46,10 @@ class CategorizationFeedback(BaseModel):
     user_id: str = Field(..., min_length=1)
     model_family: str = Field(..., min_length=1)
     model_version: str = Field(..., pattern=r"^\d+\.\d+\.\d+$")
-    action: Literal["accepted", "overridden", "abstained", "ignored"]
+    action: Literal[
+        "accepted", "overridden", "abstained", "ignored",
+        "dismissed", "confirmed", "rejected"
+    ]
     predicted_value: Optional[CategorizationPredictedValue] = None
     final_value: Optional[CategorizationFinalValue] = None
     metadata: CategorizationMetadata
@@ -54,9 +57,9 @@ class CategorizationFeedback(BaseModel):
 
     @model_validator(mode="after")
     def check_final_value(self):
-        if self.action == "ignored":
+        if self.action in {"ignored", "dismissed", "rejected"}:
             if self.final_value is not None:
-                raise ValueError("final_value must be null when action='ignored'")
+                raise ValueError("final_value must be null when action is ignored/dismissed/rejected")
         else:
             if self.final_value is None:
                 raise ValueError(

@@ -5,8 +5,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 K8S_DIR="${SCRIPT_DIR}/../k8s"
 
 kubectl delete -f "${K8S_DIR}/cronjobs/monthly-retrain.yaml" --ignore-not-found=true
+kubectl delete -f "${K8S_DIR}/cronjobs/monthly-trend-retraining-data.yaml" --ignore-not-found=true
 kubectl delete -f "${K8S_DIR}/cronjobs/nightly-eval.yaml" --ignore-not-found=true
+kubectl delete -f "${K8S_DIR}/cronjobs/weekly-categorization-retraining-data.yaml" --ignore-not-found=true
 kubectl delete -f "${K8S_DIR}/training/configmap.yaml" --ignore-not-found=true
+kubectl delete -f "${K8S_DIR}/retraining/configmap.yaml" --ignore-not-found=true
 
 kubectl delete -f "${K8S_DIR}/data/cronjob.yaml" --ignore-not-found=true
 kubectl delete -f "${K8S_DIR}/data/configmap.yaml" --ignore-not-found=true

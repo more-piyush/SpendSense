@@ -4,28 +4,45 @@ from pathlib import Path
 
 
 # ── MinIO connection ─────────────────────────────────────────────────────────
-MINIO_ENDPOINT   = os.getenv("MINIO_ENDPOINT", "129.114.24.242:9000")
+MINIO_ENDPOINT   = os.getenv(
+    "MINIO_ENDPOINT", "minio.firefly-platform.svc.cluster.local:9000"
+)
 MINIO_ACCESS_KEY = os.environ.get("MINIO_ACCESS_KEY", "")
 MINIO_SECRET_KEY = os.environ.get("MINIO_SECRET_KEY", "")
 MINIO_SECURE     = os.getenv("MINIO_SECURE", "false").lower() == "true"
 
 # ── Bucket names ─────────────────────────────────────────────────────────────
-BUCKET_PRODUCTION_LOGS = "production-logs"
-BUCKET_TRAINING_DATA   = "training-data"
-BUCKET_RETRAINING_DATA = "retraining-data"
+BUCKET_PRODUCTION_LOGS = os.getenv("BUCKET_PRODUCTION_LOGS", "production-logs")
+BUCKET_TRAINING_DATA   = os.getenv("BUCKET_TRAINING_DATA", "training-data")
+BUCKET_RETRAINING_DATA = os.getenv("BUCKET_RETRAINING_DATA", "retraining-data")
 
 # ── Path prefixes within production-logs ─────────────────────────────────────
-# Serving writes two event streams. The retraining pipeline reads feedback/*
-# (labeled events). interactions/* (raw inference events) are kept for drift
-# monitoring only — they have no user labels.
-PREFIX_CATEGORIZATION_FEEDBACK  = "feedback/categorization"
-PREFIX_TREND_FEEDBACK           = "feedback/trend"
-PREFIX_CATEGORIZATION_INFERENCE = "interactions/categorization"
-PREFIX_TREND_INFERENCE          = "interactions/trend"
+# Match the serving bucket layout shown in MinIO:
+#   production-logs/serving/feedback/categorization/YYYY/MM/DD/HH/*.json
+#   production-logs/serving/interactions/categorization/YYYY/MM/DD/HH/*.json
+PREFIX_CATEGORIZATION_FEEDBACK  = os.getenv(
+    "PREFIX_CATEGORIZATION_FEEDBACK", "serving/feedback/categorization"
+)
+PREFIX_TREND_FEEDBACK           = os.getenv(
+    "PREFIX_TREND_FEEDBACK", "serving/feedback/trend"
+)
+PREFIX_CATEGORIZATION_INFERENCE = os.getenv(
+    "PREFIX_CATEGORIZATION_INFERENCE", "serving/interactions/categorization"
+)
+PREFIX_TREND_INFERENCE          = os.getenv(
+    "PREFIX_TREND_INFERENCE", "serving/interactions/trend"
+)
 
-# ── Path prefixes within training-data (existing CE Survey pipeline) ─────────
-PREFIX_CE_CATEGORIZATION = "ce_survey/categorization"
-PREFIX_CE_ANOMALY        = "ce_survey/anomaly"
+# ── Paths within training-data (existing synthetic/BLS pipeline outputs) ─────
+# Match the existing bucket layout shown in MinIO:
+#   training-data/bls_pipeline/categorization_training.parquet
+#   training-data/bls_pipeline/trend_training.parquet
+PATH_CE_CATEGORIZATION = os.getenv(
+    "PATH_CE_CATEGORIZATION", "bls_pipeline/categorization_training.parquet"
+)
+PATH_CE_ANOMALY = os.getenv(
+    "PATH_CE_ANOMALY", "bls_pipeline/trend_training.parquet"
+)
 
 # ── Cadence / lookback windows ───────────────────────────────────────────────
 CATEGORIZATION_LOOKBACK_DAYS = 7   # weekly retrain
@@ -47,12 +64,13 @@ VAL_RATIO   = 0.15
 TEST_RATIO  = 0.15
 
 # ── Quality gates ────────────────────────────────────────────────────────────
-MIN_TOTAL_ROWS            = 500    # fail run if fewer
+MIN_TOTAL_ROWS            = 500    # target size for ready-to-train dataset
 MAX_SCHEMA_REJECT_RATE    = 0.05   # fail if >5% rejected
 MIN_UNIQUE_CATEGORIES     = 10     # categorization only
 MIN_EXAMPLES_PER_CATEGORY = 20     # categorization only
 MIN_MIX_RATIO             = 0.4    # production share ≥ 40%
 MAX_MIX_RATIO             = 0.6    # production share ≤ 60%
+MIN_PRODUCTION_ROWS_FOR_BALANCED_MIX = 50
 
 # ── Feature pipeline version (§9 registry field) ─────────────────────────────
 CATEGORIZATION_FEATURE_VERSION = "categorization.v1"

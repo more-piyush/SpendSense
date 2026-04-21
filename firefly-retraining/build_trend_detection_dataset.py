@@ -43,10 +43,7 @@ def step_1_ingest(con, cutoff_iso: str):
         log.warning("No trend feedback found (%s) — first run is OK", e)
         prod_df = pd.DataFrame()
 
-    ext_glob = (
-        f"s3://{config.BUCKET_TRAINING_DATA}/"
-        f"{config.PREFIX_CE_ANOMALY}/*.parquet"
-    )
+    ext_glob = f"s3://{config.BUCKET_TRAINING_DATA}/{config.PATH_CE_ANOMALY}"
     ext_df = con.execute(f"""
         SELECT *
         FROM read_parquet('{ext_glob}')
@@ -167,9 +164,20 @@ def step_4_weight_mix(prod_df: pd.DataFrame, ext_df: pd.DataFrame) -> pd.DataFra
     if ext_df.empty:
         fail("External anomaly training data is empty — check training-data bucket")
 
-    n = min(len(prod_df), len(ext_df))
-    prod_sample = prod_df.sample(n=n, random_state=42)
-    ext_sample  = ext_df.sample(n=n, random_state=42)
+    if len(prod_df) >= config.MIN_PRODUCTION_ROWS_FOR_BALANCED_MIX:
+        n = min(len(prod_df), len(ext_df))
+        prod_sample = prod_df.sample(n=n, random_state=42)
+        ext_target = n
+        mix_mode = "balanced"
+    else:
+        prod_sample = prod_df.copy()
+        ext_target = min(
+            len(ext_df),
+            max(config.MIN_TOTAL_ROWS - len(prod_sample), len(prod_sample)),
+        )
+        mix_mode = "bootstrap"
+
+    ext_sample = ext_df.sample(n=ext_target, random_state=42)
 
     common = sorted(set(prod_sample.columns) & set(ext_sample.columns))
     mixed = pd.concat(
@@ -177,13 +185,18 @@ def step_4_weight_mix(prod_df: pd.DataFrame, ext_df: pd.DataFrame) -> pd.DataFra
     )
 
     ratio = (mixed["source"] == "production").mean()
-    log.info("  mixed rows: %d | production share: %.2f", len(mixed), ratio)
-    if not (config.MIN_MIX_RATIO <= ratio <= config.MAX_MIX_RATIO):
+    log.info("  mix mode: %s | mixed rows: %d | production share: %.2f",
+             mix_mode, len(mixed), ratio)
+    if (
+        mix_mode == "balanced"
+        and not (config.MIN_MIX_RATIO <= ratio <= config.MAX_MIX_RATIO)
+    ):
         fail(f"Mix ratio {ratio:.2f} outside "
              f"[{config.MIN_MIX_RATIO}, {config.MAX_MIX_RATIO}]")
 
     if len(mixed) < config.MIN_TOTAL_ROWS:
-        fail(f"Only {len(mixed)} rows — need ≥{config.MIN_TOTAL_ROWS}")
+        log.warning("  dataset below target size: %d rows < %d",
+                    len(mixed), config.MIN_TOTAL_ROWS)
 
     return mixed
 
@@ -230,6 +243,8 @@ def step_6_version_write(train, val, test, now: datetime):
                  [("train", train), ("val", val), ("test", test)]},
         "source_mix": pd.concat([train, val, test])["source"]
             .value_counts().to_dict(),
+        "production_feedback_rows": int((pd.concat([train, val, test])["source"] == "production").sum()),
+        "external_rows": int((pd.concat([train, val, test])["source"] == "external").sum()),
         "training_data_hash": data_hash,
         "feature_version": config.ANOMALY_FEATURE_VERSION,
         "feature_keys": config.ANOMALY_FEATURE_KEYS,

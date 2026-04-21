@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: retraining-config
+  namespace: firefly-platform
+data:
+  MINIO_ENDPOINT: "minio.firefly-platform.svc.cluster.local:9000"
+  MINIO_SECURE: "false"
+  BUCKET_PRODUCTION_LOGS: "production-logs"
+  BUCKET_TRAINING_DATA: "training-data"
+  BUCKET_RETRAINING_DATA: "retraining-data"
+  PREFIX_CATEGORIZATION_FEEDBACK: "serving/feedback/categorization"
+  PREFIX_TREND_FEEDBACK: "serving/feedback/trend"
+  PREFIX_CATEGORIZATION_INFERENCE: "serving/interactions/categorization"
+  PREFIX_TREND_INFERENCE: "serving/interactions/trend"
+  PATH_CE_CATEGORIZATION: "bls_pipeline/categorization_training.parquet"
+  PATH_CE_ANOMALY: "bls_pipeline/trend_training.parquet"

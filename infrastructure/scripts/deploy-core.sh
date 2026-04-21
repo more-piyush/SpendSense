@@ -52,7 +52,10 @@ kubectl apply -f "${K8S_DIR}/data/configmap.yaml"
 kubectl apply -f "${K8S_DIR}/data/cronjob.yaml"
 
 kubectl apply -f "${K8S_DIR}/training/configmap.yaml"
+kubectl apply -f "${K8S_DIR}/retraining/configmap.yaml"
 kubectl apply -f "${K8S_DIR}/cronjobs/nightly-eval.yaml"
 kubectl apply -f "${K8S_DIR}/cronjobs/monthly-retrain.yaml"
+kubectl apply -f "${K8S_DIR}/cronjobs/weekly-categorization-retraining-data.yaml"
+kubectl apply -f "${K8S_DIR}/cronjobs/monthly-trend-retraining-data.yaml"
 
 echo "[INFO] Integrated core services deployed."
