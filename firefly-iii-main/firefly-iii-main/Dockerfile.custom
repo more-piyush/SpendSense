@@ -26,5 +26,12 @@ COPY --from=assets /src/public/build /var/www/html/public/build
 COPY --from=assets /src/public/v1 /var/www/html/public/v1
 COPY --from=assets /src/public/mix-manifest.json /var/www/html/public/mix-manifest.json
 
-RUN mkdir -p storage/framework/sessions storage/framework/cache storage/framework/views bootstrap/cache \
-    && chmod -R u+rwX,g+rwX /var/www/html/storage /var/www/html/bootstrap/cache || true
+RUN mkdir -p \
+    storage/logs \
+    storage/framework/sessions \
+    storage/framework/cache \
+    storage/framework/views \
+    bootstrap/cache \
+    && chmod -R a+rwX /var/www/html/storage /var/www/html/bootstrap/cache \
+    && find /var/www/html/storage /var/www/html/bootstrap/cache -type d -exec chmod 0777 {} \; \
+    && find /var/www/html/storage /var/www/html/bootstrap/cache -type f -exec chmod 0666 {} \;
