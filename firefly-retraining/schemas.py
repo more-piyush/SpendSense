@@ -12,11 +12,16 @@ envelope we have a real sample of. Tighten once a real feedback/trend sample
 is available.
 """
 from datetime import datetime
-from typing import List, Literal, Optional
+from typing import List, Literal, Optional, Union
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 import config
+
+
+# `model_*` fields trigger a protected-namespace warning in pydantic v2.
+# Our serving team already logs these names — opt out of the namespace check.
+_ALLOW_MODEL_PREFIX = ConfigDict(protected_namespaces=())
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -34,16 +39,26 @@ class CategorizationFinalValue(BaseModel):
 class CategorizationMetadata(BaseModel):
     source: Optional[str] = None
     description: str = Field(..., min_length=1)
-    amount: str                                         # logged as string
+    amount: Union[str, float, int]                      # tolerate either
     currency: str = Field(..., pattern=r"^[A-Z]{3}$")
     country: Optional[str] = None                       # absent in current logs
     feedback_origin: Optional[str] = None
 
+    @field_validator("amount", mode="before")
+    @classmethod
+    def amount_to_str(cls, v):
+        # Accept str/int/float; downstream code coerces to float
+        if v is None:
+            raise ValueError("amount is required")
+        return str(v)
+
 
 class CategorizationFeedback(BaseModel):
+    model_config = _ALLOW_MODEL_PREFIX
+
     task: Literal["categorization"]
     transaction_id: str = Field(..., min_length=1)
-    user_id: str = Field(..., min_length=1)
+    user_id: Optional[str] = None                       # can be null if unlinked
     model_family: str = Field(..., min_length=1)
     model_version: str = Field(..., pattern=r"^\d+\.\d+\.\d+$")
     action: Literal["accepted", "overridden", "abstained", "ignored"]
@@ -51,6 +66,12 @@ class CategorizationFeedback(BaseModel):
     final_value: Optional[CategorizationFinalValue] = None
     metadata: CategorizationMetadata
     timestamp: datetime
+
+    @field_validator("user_id", mode="before")
+    @classmethod
+    def user_id_to_str(cls, v):
+        # Serving sometimes logs numeric user_id — coerce to string
+        return None if v is None else str(v)
 
     @model_validator(mode="after")
     def check_final_value(self):
@@ -87,8 +108,10 @@ class TrendFinalValue(BaseModel):
 
 
 class TrendFeedback(BaseModel):
+    model_config = _ALLOW_MODEL_PREFIX
+
     task: Literal["trend_detection"]
-    user_id: str = Field(..., min_length=1)
+    user_id: Optional[str] = None
     category: str = Field(..., min_length=1)
     period: str = Field(..., pattern=r"^\d{4}-\d{2}$")
     model_family: str = Field(..., min_length=1)
@@ -99,6 +122,11 @@ class TrendFeedback(BaseModel):
     final_value: Optional[TrendFinalValue] = None
     metadata: dict = Field(default_factory=dict)
     timestamp: datetime
+
+    @field_validator("user_id", mode="before")
+    @classmethod
+    def user_id_to_str(cls, v):
+        return None if v is None else str(v)
 
     @field_validator("features")
     @classmethod

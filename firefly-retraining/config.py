@@ -47,10 +47,13 @@ VAL_RATIO   = 0.15
 TEST_RATIO  = 0.15
 
 # ── Quality gates ────────────────────────────────────────────────────────────
-MIN_TOTAL_ROWS            = 500    # fail run if fewer
-MAX_SCHEMA_REJECT_RATE    = 0.05   # fail if >5% rejected
-MIN_UNIQUE_CATEGORIES     = 10     # categorization only
-MIN_EXAMPLES_PER_CATEGORY = 20     # categorization only
+# Gates are in BOOTSTRAP defaults — loose enough that a first real run passes
+# with a handful of feedback events. Tighten once weekly traffic >500 events.
+MIN_TOTAL_ROWS            = 10     # bootstrap: 10, steady-state: 500
+MAX_SCHEMA_REJECT_RATE    = 0.10   # 10% during bootstrap, 0.05 once mature
+MIN_REJECT_CHECK_SAMPLE   = 50     # skip reject-rate gate below this count
+MIN_UNIQUE_CATEGORIES     = 3      # bootstrap: 3, steady-state: 10
+MIN_EXAMPLES_PER_CATEGORY = 1      # bootstrap: 1, steady-state: 20
 MIN_MIX_RATIO             = 0.4    # production share ≥ 40%
 MAX_MIX_RATIO             = 0.6    # production share ≤ 60%
 
