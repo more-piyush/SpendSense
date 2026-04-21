@@ -40,7 +40,7 @@ def step_1_ingest(con, cutoff_iso: str):
         prod_df = con.execute(f"""
             SELECT *
             FROM read_json_auto('{prod_glob}', format='auto', ignore_errors=true)
-            WHERE recorded_at >= TIMESTAMP '{cutoff_iso}'
+            WHERE TRY_CAST(recorded_at AS TIMESTAMPTZ) >= TIMESTAMPTZ '{cutoff_iso}'
               AND event_type = 'feedback/categorization'
         """).df()
     except Exception as e:
@@ -48,20 +48,47 @@ def step_1_ingest(con, cutoff_iso: str):
         prod_df = pd.DataFrame()
 
     ext_glob = f"s3://{config.BUCKET_TRAINING_DATA}/{config.PATH_CE_CATEGORIZATION}"
-    ext_df = con.execute(f"""
-        SELECT
-            transaction_description,
-            amount,
-            currency,
-            country,
-            primary_category AS final_category,
-            CAST(NULL AS TIMESTAMP) AS timestamp
-        FROM read_parquet('{ext_glob}')
-    """).df()
+    ext_df = con.execute(f"SELECT * FROM read_parquet('{ext_glob}')").df()
+    ext_df = _normalize_external_categorization(ext_df)
 
     log.info("  production rows: %d", len(prod_df))
     log.info("  external rows:   %d", len(ext_df))
     return prod_df, ext_df
+
+
+def _normalize_external_categorization(ext_df: pd.DataFrame) -> pd.DataFrame:
+    """Map the existing training parquet columns into the retraining schema."""
+    if ext_df.empty:
+        return pd.DataFrame(
+            columns=[
+                "transaction_description",
+                "amount",
+                "currency",
+                "country",
+                "final_category",
+                "timestamp",
+            ]
+        )
+
+    column_aliases = {
+        "transaction_description": ["transaction_description", "description", "text"],
+        "final_category": ["final_category", "primary_category", "category", "label"],
+        "amount": ["amount", "normalized_amount", "transaction_amount"],
+        "currency": ["currency", "currency_code"],
+        "country": ["country", "country_code"],
+    }
+
+    normalized = pd.DataFrame(index=ext_df.index)
+    for target, candidates in column_aliases.items():
+        for candidate in candidates:
+            if candidate in ext_df.columns:
+                normalized[target] = ext_df[candidate]
+                break
+        if target not in normalized.columns:
+            normalized[target] = None
+
+    normalized["timestamp"] = pd.Timestamp("2020-01-01", tz="UTC")
+    return normalized
 
 
 # ─────────────────────────────────────────────────────────────────────────────

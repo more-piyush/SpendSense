@@ -1,198 +1,94 @@
 locals {
-  control_plane_name             = "${var.cluster_name}-cp-1"
-  worker_names                   = [for i in range(var.worker_count) : format("%s-worker-%02d", var.cluster_name, i + 1)]
-  use_named_external_net         = var.external_network_name != ""
-  resolved_external_network_name = local.use_named_external_net ? data.openstack_networking_network_v2.external_by_name[0].name : data.openstack_networking_network_v2.external_auto[0].name
-  resolved_external_network_id   = local.use_named_external_net ? data.openstack_networking_network_v2.external_by_name[0].id : data.openstack_networking_network_v2.external_auto[0].id
-  effective_floating_ip_pool     = var.floating_ip_pool != "" ? var.floating_ip_pool : local.resolved_external_network_name
+  node_keys         = sort(keys(var.nodes))
+  control_plane_key = local.node_keys[0]
+  worker_keys       = slice(local.node_keys, 1, length(local.node_keys))
 }
 
-resource "openstack_networking_network_v2" "cluster" {
-  name           = var.network_name
-  admin_state_up = true
+resource "openstack_networking_network_v2" "private_net" {
+  name                  = "private-net-mlops-${var.suffix}"
+  port_security_enabled = false
 }
 
-resource "openstack_networking_subnet_v2" "cluster" {
-  name            = var.subnet_name
-  network_id      = openstack_networking_network_v2.cluster.id
-  cidr            = var.subnet_cidr
-  ip_version      = 4
-  dns_nameservers = ["8.8.8.8", "1.1.1.1"]
+resource "openstack_networking_subnet_v2" "private_subnet" {
+  name       = "private-subnet-mlops-${var.suffix}"
+  network_id = openstack_networking_network_v2.private_net.id
+  cidr       = "192.168.1.0/24"
+  no_gateway = true
 }
 
-data "openstack_networking_network_v2" "external_by_name" {
-  count = local.use_named_external_net ? 1 : 0
-  name  = var.external_network_name
+resource "openstack_networking_port_v2" "private_net_ports" {
+  for_each              = var.nodes
+  name                  = "port-${each.key}-mlops-${var.suffix}"
+  network_id            = openstack_networking_network_v2.private_net.id
+  port_security_enabled = false
+
+  fixed_ip {
+    subnet_id  = openstack_networking_subnet_v2.private_subnet.id
+    ip_address = each.value
+  }
 }
 
-data "openstack_networking_network_v2" "external_auto" {
-  count    = local.use_named_external_net ? 0 : 1
-  external = true
+resource "openstack_networking_port_v2" "sharednet1_ports" {
+  for_each   = var.nodes
+  name       = "sharednet1-${each.key}-mlops-${var.suffix}"
+  network_id = data.openstack_networking_network_v2.sharednet1.id
+  security_group_ids = [
+    data.openstack_networking_secgroup_v2.allow_ssh.id,
+    data.openstack_networking_secgroup_v2.allow_9001.id,
+    data.openstack_networking_secgroup_v2.allow_8000.id,
+    data.openstack_networking_secgroup_v2.allow_8080.id,
+    data.openstack_networking_secgroup_v2.allow_8081.id,
+    data.openstack_networking_secgroup_v2.allow_8082.id,
+    data.openstack_networking_secgroup_v2.allow_http_80.id,
+    data.openstack_networking_secgroup_v2.allow_9090.id,
+  ]
 }
 
-data "openstack_blockstorage_volume_v3" "data_volume" {
-  count = var.data_volume_name != "" ? 1 : 0
-  name  = var.data_volume_name
-}
+resource "openstack_compute_instance_v2" "nodes" {
+  for_each = var.nodes
 
-resource "openstack_networking_router_v2" "cluster" {
-  name                = var.router_name
-  external_network_id = local.resolved_external_network_id
-}
-
-resource "openstack_networking_router_interface_v2" "cluster" {
-  router_id = openstack_networking_router_v2.cluster.id
-  subnet_id = openstack_networking_subnet_v2.cluster.id
-}
-
-resource "openstack_networking_secgroup_v2" "cluster" {
-  count       = var.create_security_group ? 1 : 0
-  name        = "${var.cluster_name}-sg"
-  description = "SpendSense Kubernetes security group"
-}
-
-resource "openstack_networking_secgroup_rule_v2" "ssh" {
-  for_each          = var.create_security_group ? toset(var.ssh_allowed_cidrs) : toset([])
-  direction         = "ingress"
-  ethertype         = "IPv4"
-  protocol          = "tcp"
-  port_range_min    = 22
-  port_range_max    = 22
-  remote_ip_prefix  = each.value
-  security_group_id = openstack_networking_secgroup_v2.cluster[0].id
-}
-
-resource "openstack_networking_secgroup_rule_v2" "k8s_api" {
-  for_each          = var.create_security_group ? toset(var.api_allowed_cidrs) : toset([])
-  direction         = "ingress"
-  ethertype         = "IPv4"
-  protocol          = "tcp"
-  port_range_min    = 6443
-  port_range_max    = 6443
-  remote_ip_prefix  = each.value
-  security_group_id = openstack_networking_secgroup_v2.cluster[0].id
-}
-
-resource "openstack_networking_secgroup_rule_v2" "http" {
-  for_each          = var.create_security_group ? toset(var.http_allowed_cidrs) : toset([])
-  direction         = "ingress"
-  ethertype         = "IPv4"
-  protocol          = "tcp"
-  port_range_min    = 80
-  port_range_max    = 80
-  remote_ip_prefix  = each.value
-  security_group_id = openstack_networking_secgroup_v2.cluster[0].id
-}
-
-resource "openstack_networking_secgroup_rule_v2" "https" {
-  for_each          = var.create_security_group ? toset(var.http_allowed_cidrs) : toset([])
-  direction         = "ingress"
-  ethertype         = "IPv4"
-  protocol          = "tcp"
-  port_range_min    = 443
-  port_range_max    = 443
-  remote_ip_prefix  = each.value
-  security_group_id = openstack_networking_secgroup_v2.cluster[0].id
-}
-
-resource "openstack_networking_secgroup_rule_v2" "nodeport" {
-  for_each          = var.create_security_group ? toset(var.nodeport_allowed_cidrs) : toset([])
-  direction         = "ingress"
-  ethertype         = "IPv4"
-  protocol          = "tcp"
-  port_range_min    = 30000
-  port_range_max    = 32767
-  remote_ip_prefix  = each.value
-  security_group_id = openstack_networking_secgroup_v2.cluster[0].id
-}
-
-resource "openstack_networking_secgroup_rule_v2" "all_internal" {
-  count             = var.create_security_group ? 1 : 0
-  direction         = "ingress"
-  ethertype         = "IPv4"
-  remote_ip_prefix  = var.subnet_cidr
-  security_group_id = openstack_networking_secgroup_v2.cluster[0].id
-}
-
-resource "openstack_compute_instance_v2" "control_plane" {
-  name            = local.control_plane_name
-  image_name      = var.image_name
-  flavor_name     = var.control_plane_flavor
-  key_pair        = var.keypair_name
-  security_groups = var.create_security_group ? [openstack_networking_secgroup_v2.cluster[0].name] : []
+  name       = "${each.key}-mlops-${var.suffix}"
+  image_name = var.image_name
+  flavor_id  = var.reservation
+  key_pair   = var.key
 
   network {
-    uuid = openstack_networking_network_v2.cluster.id
+    port = openstack_networking_port_v2.sharednet1_ports[each.key].id
   }
 
-  dynamic "scheduler_hints" {
-    for_each = var.reservation_id != "" ? [1] : []
-    content {
-      additional_properties = {
-        reservation = var.reservation_id
-      }
-    }
+  network {
+    port = openstack_networking_port_v2.private_net_ports[each.key].id
   }
+
+  user_data = <<-EOF
+    #! /bin/bash
+    sudo echo "127.0.1.1 ${each.key}-mlops-${var.suffix}" >> /etc/hosts
+    su cc -c /usr/local/bin/cc-load-public-keys
+  EOF
 }
 
-resource "openstack_networking_floatingip_v2" "control_plane" {
-  pool = local.effective_floating_ip_pool
-}
-
-resource "openstack_compute_floatingip_associate_v2" "control_plane" {
-  floating_ip = openstack_networking_floatingip_v2.control_plane.address
-  instance_id = openstack_compute_instance_v2.control_plane.id
+resource "openstack_networking_floatingip_v2" "floating_ip" {
+  pool        = var.floating_ip_pool
+  description = "SpendSense IP for ${var.suffix}"
+  port_id     = openstack_networking_port_v2.sharednet1_ports[local.control_plane_key].id
 }
 
 resource "openstack_compute_volume_attach_v2" "control_plane_data_volume" {
   count       = var.data_volume_name != "" ? 1 : 0
-  instance_id = openstack_compute_instance_v2.control_plane.id
+  instance_id = openstack_compute_instance_v2.nodes[local.control_plane_key].id
   volume_id   = data.openstack_blockstorage_volume_v3.data_volume[0].id
-}
-
-resource "openstack_compute_instance_v2" "workers" {
-  count           = var.worker_count
-  name            = local.worker_names[count.index]
-  image_name      = var.image_name
-  flavor_name     = var.worker_flavor
-  key_pair        = var.keypair_name
-  security_groups = var.create_security_group ? [openstack_networking_secgroup_v2.cluster[0].name] : []
-
-  network {
-    uuid = openstack_networking_network_v2.cluster.id
-  }
-
-  dynamic "scheduler_hints" {
-    for_each = var.reservation_id != "" ? [1] : []
-    content {
-      additional_properties = {
-        reservation = var.reservation_id
-      }
-    }
-  }
-}
-
-resource "openstack_networking_floatingip_v2" "workers" {
-  count = var.worker_count
-  pool  = local.effective_floating_ip_pool
-}
-
-resource "openstack_compute_floatingip_associate_v2" "workers" {
-  count       = var.worker_count
-  floating_ip = openstack_networking_floatingip_v2.workers[count.index].address
-  instance_id = openstack_compute_instance_v2.workers[count.index].id
 }
 
 resource "local_file" "ansible_inventory" {
   filename = "${path.module}/../../ansible/inventory/chameleon/hosts.yml"
   content = templatefile("${path.module}/templates/hosts.yml.tftpl", {
     ssh_user           = var.ssh_user
-    control_plane_name = openstack_compute_instance_v2.control_plane.name
-    control_plane_ip   = openstack_networking_floatingip_v2.control_plane.address
+    control_plane_name = openstack_compute_instance_v2.nodes[local.control_plane_key].name
+    control_plane_ip   = openstack_networking_floatingip_v2.floating_ip.address
     worker_nodes = [
-      for idx, instance in openstack_compute_instance_v2.workers : {
-        name = instance.name
-        ip   = openstack_networking_floatingip_v2.workers[idx].address
+      for key in local.worker_keys : {
+        name = openstack_compute_instance_v2.nodes[key].name
+        ip   = openstack_networking_port_v2.private_net_ports[key].all_fixed_ips[0]
       }
     ]
   })

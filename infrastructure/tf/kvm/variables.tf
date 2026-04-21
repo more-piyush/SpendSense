@@ -1,18 +1,26 @@
-variable "openstack_cloud" {
-  description = "Cloud entry name from clouds.yaml."
+variable "suffix" {
+  description = "Suffix for resource names (use net ID or project suffix)."
   type        = string
-  default     = "openstack"
+  nullable    = false
 }
 
-variable "cluster_name" {
-  description = "Prefix used for all Chameleon resources."
+variable "key" {
+  description = "Name of key pair."
   type        = string
-  default     = "spendsense"
+  default     = "id_rsa_chameleon"
 }
 
-variable "keypair_name" {
-  description = "Existing OpenStack keypair name uploaded to Chameleon."
+variable "reservation" {
+  description = "UUID of the reserved flavor from the Chameleon lease."
   type        = string
+}
+
+variable "nodes" {
+  description = "Map of node names to private IPs on the private network."
+  type        = map(string)
+  default = {
+    node1 = "192.168.1.11"
+  }
 }
 
 variable "ssh_user" {
@@ -24,98 +32,17 @@ variable "ssh_user" {
 variable "image_name" {
   description = "OpenStack image name for all nodes."
   type        = string
-}
-
-variable "control_plane_flavor" {
-  description = "Flavor for the control-plane instance."
-  type        = string
-}
-
-variable "worker_flavor" {
-  description = "Flavor for worker instances."
-  type        = string
-}
-
-variable "worker_count" {
-  description = "Number of worker nodes to provision."
-  type        = number
-  default     = 2
-}
-
-variable "reservation_id" {
-  description = "Existing Chameleon reservation UUID for the KVM flavor lease."
-  type        = string
-  default     = ""
+  default     = "CC-Ubuntu24.04"
 }
 
 variable "data_volume_name" {
-  description = "Optional existing Cinder volume name to attach to the control-plane node."
-  type        = string
-  default     = ""
-}
-
-variable "network_name" {
-  description = "Private network name to create for the cluster."
-  type        = string
-  default     = "spendsense-net"
-}
-
-variable "subnet_name" {
-  description = "Private subnet name to create for the cluster."
-  type        = string
-  default     = "spendsense-subnet"
-}
-
-variable "subnet_cidr" {
-  description = "CIDR for the private subnet."
-  type        = string
-  default     = "192.168.42.0/24"
-}
-
-variable "router_name" {
-  description = "Router name used to reach the external network."
-  type        = string
-  default     = "spendsense-router"
-}
-
-variable "external_network_name" {
-  description = "Optional external network name in OpenStack. Leave empty to auto-discover the external network."
+  description = "Optional existing Cinder volume name to attach to node1."
   type        = string
   default     = ""
 }
 
 variable "floating_ip_pool" {
-  description = "Floating IP pool/network name for node access. Leave empty to reuse external_network_name."
+  description = "Floating IP pool/network name for node1 public access."
   type        = string
-  default     = ""
-}
-
-variable "ssh_allowed_cidrs" {
-  description = "CIDRs allowed to SSH to the cluster."
-  type        = list(string)
-  default     = ["0.0.0.0/0"]
-}
-
-variable "api_allowed_cidrs" {
-  description = "CIDRs allowed to reach the Kubernetes API."
-  type        = list(string)
-  default     = ["0.0.0.0/0"]
-}
-
-variable "http_allowed_cidrs" {
-  description = "CIDRs allowed to reach HTTP/HTTPS ingress."
-  type        = list(string)
-  default     = ["0.0.0.0/0"]
-}
-
-variable "nodeport_allowed_cidrs" {
-  description = "CIDRs allowed to reach NodePort services."
-  type        = list(string)
-  default     = ["0.0.0.0/0"]
-}
-
-variable "create_security_group" {
-  description = "Whether Terraform should create a dedicated security group."
-  type        = bool
-  default     = true
+  default     = "public"
 }

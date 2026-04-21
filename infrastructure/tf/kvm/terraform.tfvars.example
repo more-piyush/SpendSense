@@ -1,30 +1,13 @@
-openstack_cloud       = "openstack"
-cluster_name          = "spendsense"
-keypair_name          = "REPLACE_WITH_CHAMELEON_KEYPAIR"
-ssh_user              = "cc"
+suffix      = "REPLACE_WITH_SUFFIX"
+key         = "REPLACE_WITH_CHAMELEON_KEYPAIR"
+reservation = "REPLACE_WITH_RESERVATION_UUID"
 
-# Fill only these Chameleon-specific placeholders.
-image_name            = "REPLACE_WITH_IMAGE_NAME"
-control_plane_flavor  = "REPLACE_WITH_CONTROL_PLANE_FLAVOR"
-worker_flavor         = "REPLACE_WITH_WORKER_FLAVOR"
-reservation_id        = "REPLACE_WITH_EXISTING_RESERVATION_UUID"
-data_volume_name      = "OPTIONAL_EXISTING_VOLUME_NAME"
+ssh_user   = "cc"
+image_name = "CC-Ubuntu24.04"
 
-worker_count = 2
+nodes = {
+  node1 = "192.168.1.11"
+}
 
-# Optional. If omitted, Terraform auto-discovers the external network.
-# external_network_name = "REPLACE_WITH_EXTERNAL_NETWORK"
-
-# Optional. If omitted, Terraform uses the resolved external network as the floating IP pool.
-# floating_ip_pool = "REPLACE_WITH_FLOATING_IP_POOL"
-
-# Optional: uncomment only if you need custom networking or tighter access.
-# network_name = "spendsense-net"
-# subnet_name  = "spendsense-subnet"
-# subnet_cidr  = "192.168.42.0/24"
-# router_name  = "spendsense-router"
-#
-# ssh_allowed_cidrs      = ["0.0.0.0/0"]
-# api_allowed_cidrs      = ["0.0.0.0/0"]
-# http_allowed_cidrs     = ["0.0.0.0/0"]
-# nodeport_allowed_cidrs = ["0.0.0.0/0"]
+data_volume_name = "OPTIONAL_EXISTING_VOLUME_NAME"
+floating_ip_pool = "public"

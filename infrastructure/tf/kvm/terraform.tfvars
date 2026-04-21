@@ -1,30 +1,13 @@
-openstack_cloud = "openstack"
-cluster_name    = "spendsense"
-keypair_name    = "mlops_proj20"
-ssh_user        = "cc"
+suffix      = "spendsense"
+key         = "mlops_proj20"
+reservation = "ca122638-97d8-49b5-9955-8cac9e0d4ae8"
 
-# Fill only these Chameleon-specific placeholders.
-image_name           = "CC-Ubuntu24.04"
-control_plane_flavor = "m1.large"
-worker_flavor        = "m1.large"
-reservation_id       = "ca122638-97d8-49b5-9955-8cac9e0d4ae8"
-data_volume_name     = "mlops_proj20_devops"
+ssh_user   = "cc"
+image_name = "CC-Ubuntu24.04"
 
-worker_count = 0
+nodes = {
+  node1 = "192.168.1.11"
+}
 
-# Optional. If omitted, Terraform auto-discovers the external network.
-# external_network_name = "REPLACE_WITH_ACTUAL_EXTERNAL_NETWORK"
-
-# Optional. If omitted, Terraform uses the resolved external network as the floating IP pool.
-# floating_ip_pool = "REPLACE_WITH_FLOATING_IP_POOL"
-
-# Optional: uncomment only if you need custom networking or tighter access.
-# network_name = "spendsense-net"
-# subnet_name  = "spendsense-subnet"
-# subnet_cidr  = "192.168.42.0/24"
-# router_name  = "spendsense-router"
-#
-# ssh_allowed_cidrs      = ["0.0.0.0/0"]
-# api_allowed_cidrs      = ["0.0.0.0/0"]
-# http_allowed_cidrs     = ["0.0.0.0/0"]
-# nodeport_allowed_cidrs = ["0.0.0.0/0"]
+data_volume_name = "mlops_proj20_devops"
+floating_ip_pool = "public"
