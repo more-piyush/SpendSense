@@ -113,6 +113,9 @@ jobs:
           if not firefly_app_key:
               firefly_app_key = f"base64:{secrets.token_urlsafe(32)}"
 
+          default_nodes_yaml = '{\n  node1 = "192.168.1.11"\n}'
+          tf_nodes_yaml = val("TF_NODES_YAML", default_nodes_yaml)
+
           tfvars = f'''suffix = "{val("TF_SUFFIX")}"
           key = "{val("TF_KEYPAIR_NAME")}"
           reservation = "{val("TF_RESERVATION_ID")}"
@@ -120,7 +123,7 @@ jobs:
           image_name = "{val("TF_IMAGE_NAME", "CC-Ubuntu24.04")}"
           data_volume_name = "{val("TF_DATA_VOLUME_NAME")}"
           floating_ip_pool = "{val("TF_FLOATING_IP_POOL", "public")}"
-          nodes = {val("TF_NODES_YAML", "{\\n  node1 = \\"192.168.1.11\\"\\n}")}'''
+          nodes = {tf_nodes_yaml}'''
 
           ansible_all = f'''---
           ansible_user: {val("ANSIBLE_SSH_USER", "cc")}
