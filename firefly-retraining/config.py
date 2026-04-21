@@ -65,6 +65,7 @@ TEST_RATIO  = 0.15
 
 # ── Quality gates ────────────────────────────────────────────────────────────
 MIN_TOTAL_ROWS            = 500    # target size for ready-to-train dataset
+MIN_REJECT_CHECK_SAMPLE   = 100    # skip reject-rate gate on tiny bootstrap samples
 MAX_SCHEMA_REJECT_RATE    = 0.05   # fail if >5% rejected
 MIN_UNIQUE_CATEGORIES     = 10     # categorization only
 MIN_EXAMPLES_PER_CATEGORY = 20     # categorization only
