@@ -1,0 +1,9 @@
+FROM python:3.10-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY app_onnx.py .
+COPY onnx_model_quantized/ ./onnx_model_quantized/
+ENV ONNX_MODEL_PATH=onnx_model_quantized/model.onnx
+EXPOSE 8002
+CMD ["uvicorn", "app_onnx:app", "--host", "0.0.0.0", "--port", "8002"]

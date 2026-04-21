@@ -1,0 +1,39 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: postgres-bootstrap
+  namespace: firefly-platform
+spec:
+  backoffLimit: 4
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: postgres-bootstrap
+          image: postgres:15
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+              until pg_isready -h postgres.firefly-platform.svc.cluster.local -p 5432 -U "$POSTGRES_USER" -d postgres; do
+                echo "[INFO] Waiting for PostgreSQL to become ready..."
+                sleep 3
+              done
+
+              export PGPASSWORD="$POSTGRES_PASSWORD"
+              PSQLOPTS="-h postgres.firefly-platform.svc.cluster.local -p 5432 -U $POSTGRES_USER"
+
+              if ! psql $PSQLOPTS -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='firefly'" | grep -q 1; then
+                psql $PSQLOPTS -d postgres -c "CREATE DATABASE firefly OWNER $POSTGRES_USER"
+              fi
+
+              if ! psql $PSQLOPTS -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='mlflow'" | grep -q 1; then
+                psql $PSQLOPTS -d postgres -c "CREATE DATABASE mlflow OWNER $POSTGRES_USER"
+              fi
+
+              psql $PSQLOPTS -d postgres -c "GRANT ALL PRIVILEGES ON DATABASE firefly TO $POSTGRES_USER"
+              psql $PSQLOPTS -d postgres -c "GRANT ALL PRIVILEGES ON DATABASE mlflow TO $POSTGRES_USER"
+              echo "[INFO] PostgreSQL application databases are ready"
+          envFrom:
+            - secretRef:
+                name: postgres-secret

@@ -1,0 +1,397 @@
+<?php
+
+/**
+ * PreferencesController.php
+ * Copyright (c) 2019 james@firefly-iii.org
+ *
+ * This file is part of Firefly III (https://github.com/firefly-iii).
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+declare(strict_types=1);
+
+namespace FireflyIII\Http\Controllers;
+
+use Carbon\Carbon;
+use FireflyIII\Enums\AccountTypeEnum;
+use FireflyIII\Events\Preferences\UserGroupChangedPrimaryCurrency;
+use FireflyIII\Events\Test\UserTestsNotificationChannel;
+use FireflyIII\Exceptions\FireflyException;
+use FireflyIII\Http\Requests\PreferencesRequest;
+use FireflyIII\Models\Account;
+use FireflyIII\Models\Preference;
+use FireflyIII\Repositories\Account\AccountRepositoryInterface;
+use FireflyIII\Support\Facades\Navigation;
+use FireflyIII\Support\Facades\Preferences;
+use FireflyIII\Support\Facades\Steam;
+use FireflyIII\Support\Singleton\PreferencesSingleton;
+use FireflyIII\User;
+use Illuminate\Contracts\View\Factory;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
+use Illuminate\View\View;
+use JsonException;
+use Safe\Exceptions\FilesystemException;
+
+use function Safe\file_get_contents;
+use function Safe\json_decode;
+
+/**
+ * Class PreferencesController.
+ */
+final class PreferencesController extends Controller
+{
+    /**
+     * PreferencesController constructor.
+     */
+    public function __construct()
+    {
+        parent::__construct();
+
+        $this->middleware(static function ($request, $next) {
+            app('view')->share('title', (string) trans('firefly.preferences'));
+            app('view')->share('mainTitleIcon', 'fa-gear');
+
+            return $next($request);
+        });
+    }
+
+    /**
+     * Show overview of preferences.
+     *
+     * @return Factory|View
+     *
+     * @throws FireflyException
+     * @throws FilesystemException
+     */
+    public function index(AccountRepositoryInterface $repository): Factory|\Illuminate\Contracts\View\View
+    {
+        $accounts                       = $repository->getAccountsByType([
+            AccountTypeEnum::DEFAULT->value,
+            AccountTypeEnum::ASSET->value,
+            AccountTypeEnum::LOAN->value,
+            AccountTypeEnum::DEBT->value,
+            AccountTypeEnum::MORTGAGE->value,
+        ]);
+        $isDocker                       = config('firefly.is_docker');
+        $groupedAccounts                = [];
+
+        /** @var Account $account */
+        foreach ($accounts as $account) {
+            $type                                                                        = $account->accountType->type;
+            $role                                                                        = sprintf('opt_group_%s', $repository->getMetaValue($account, 'account_role'));
+
+            if (in_array($type, [AccountTypeEnum::MORTGAGE->value, AccountTypeEnum::DEBT->value, AccountTypeEnum::LOAN->value], true)) {
+                $role = sprintf('opt_group_l_%s', $type);
+            }
+
+            if ('opt_group_' === $role) {
+                $role = 'opt_group_defaultAsset';
+            }
+            $groupedAccounts[(string) trans(sprintf('firefly.%s', $role))][$account->id] = $account->name;
+        }
+        ksort($groupedAccounts);
+
+        /** @var array<int, int> $accountIds */
+        $accountIds                     = $accounts->pluck('id')->toArray();
+        $viewRange                      = Navigation::getViewRange(false);
+        $frontpageAccountsPref          = Preferences::get('frontpageAccounts', $accountIds);
+        $frontpageAccounts              = $frontpageAccountsPref->data;
+        if (!is_array($frontpageAccounts)) {
+            $frontpageAccounts = $accountIds;
+        }
+        $language                       = Steam::getLanguage();
+        $languages                      = config('firefly.languages');
+        $locale                         = Preferences::get('locale', config('firefly.default_locale', 'equal'))->data;
+        $listPageSize                   = Preferences::get('listPageSize', 50)->data;
+        $darkMode                       = Preferences::get('darkMode', 'browser')->data;
+        $customFiscalYear               = Preferences::get('customFiscalYear', 0)->data;
+        $fiscalYearStartStr             = Preferences::get('fiscalYearStart', '01-01')->data;
+        $convertToPrimary               = $this->convertToPrimary;
+        if (is_array($fiscalYearStartStr)) {
+            $fiscalYearStartStr = '01-01';
+        }
+        $fiscalYearStart                = sprintf('%s-%s', Carbon::now()->format('Y'), (string) $fiscalYearStartStr);
+        $tjOptionalFields               = Preferences::get('transaction_journal_optional_fields', [])->data;
+        $availableDarkModes             = config('firefly.available_dark_modes');
+
+        // notifications settings
+        $slackUrl                       = Preferences::getEncrypted('slack_webhook_url', '')->data;
+        $pushoverAppToken               = (string) Preferences::getEncrypted('pushover_app_token', '')->data;
+        $pushoverUserToken              = (string) Preferences::getEncrypted('pushover_user_token', '')->data;
+        $ntfyServer                     = Preferences::getEncrypted('ntfy_server', 'https://ntfy.sh')->data;
+        $ntfyTopic                      = (string) Preferences::getEncrypted('ntfy_topic', '')->data;
+        $ntfyAuth                       = '1' === Preferences::get('ntfy_auth', false)->data;
+        $ntfyUser                       = Preferences::getEncrypted('ntfy_user', '')->data;
+        $ntfyPass                       = (string) Preferences::getEncrypted('ntfy_pass', '')->data;
+        $channels                       = config('notifications.channels');
+        $forcedAvailability             = [];
+        $anonymous                      = Steam::anonymous();
+
+        // notification preferences
+        $notifications                  = [];
+        foreach (config('notifications.notifications.user') as $key => $info) {
+            if (true === $info['enabled']) {
+                $notifications[$key] = [
+                    'enabled'      => true === Preferences::get(sprintf('notification_%s', $key), true)->data,
+                    'configurable' => $info['configurable'],
+                ];
+            }
+        }
+        // loop all channels to see if they are available.
+        foreach ($channels as $channel => $info) {
+            $forcedAvailability[$channel] = true;
+        }
+        $forcedAvailability['ntfy']     = '' !== $ntfyTopic;
+        $forcedAvailability['pushover'] = '' !== $pushoverAppToken && '' !== $pushoverUserToken;
+
+        ksort($languages);
+
+        // list of locales also has "equal" which makes it equal to whatever the language is.
+
+        try {
+            $locales = json_decode(file_get_contents(resource_path(sprintf('locales/%s/locales.json', $language))), true, 512, JSON_THROW_ON_ERROR);
+        } catch (JsonException $e) {
+            Log::error($e->getMessage());
+            $locales = [];
+        }
+        $locales                        = ['equal' => (string) trans('firefly.equal_to_language')] + $locales;
+        // an important fallback is that the frontPageAccount array gets refilled automatically
+        // when it turns up empty.
+        if (0 === count($frontpageAccounts)) {
+            $frontpageAccounts = $accountIds;
+        }
+
+        // for the demo user, the notification settings are automatically emptied.
+        // this isn't really secure, but it means that the demo site has semi-secret notification settings.
+        if (auth()->user()->hasRole('demo')) {
+            $slackUrl          = '';
+            $pushoverAppToken  = '';
+            $pushoverUserToken = '';
+            $ntfyServer        = '';
+            $ntfyTopic         = '';
+            $ntfyAuth          = false;
+            $ntfyUser          = '';
+            $ntfyPass          = '';
+        }
+
+        return view('preferences.index', [
+            'anonymous'          => $anonymous,
+            'language'           => $language,
+            'pushoverAppToken'   => $pushoverAppToken,
+            'pushoverUserToken'  => $pushoverUserToken,
+            'ntfyServer'         => $ntfyServer,
+            'ntfyTopic'          => $ntfyTopic,
+            'ntfyAuth'           => $ntfyAuth,
+            'channels'           => $channels,
+            'ntfyUser'           => $ntfyUser,
+            'forcedAvailability' => $forcedAvailability,
+            'ntfyPass'           => $ntfyPass,
+            'groupedAccounts'    => $groupedAccounts,
+            'isDocker'           => $isDocker,
+            'frontpageAccounts'  => $frontpageAccounts,
+            'languages'          => $languages,
+            'darkMode'           => $darkMode,
+            'availableDarkModes' => $availableDarkModes,
+            'notifications'      => $notifications,
+            'convertToPrimary'   => $convertToPrimary,
+            'slackUrl'           => $slackUrl,
+            'locales'            => $locales,
+            'locale'             => $locale,
+            'tjOptionalFields'   => $tjOptionalFields,
+            'viewRange'          => $viewRange,
+            'customFiscalYear'   => $customFiscalYear,
+            'listPageSize'       => $listPageSize,
+            'fiscalYearStart'    => $fiscalYearStart,
+        ]);
+    }
+
+    /**
+     * Store new preferences.
+     *
+     * @throws FireflyException
+     *
+     * @SuppressWarnings("PHPMD.ExcessiveMethodLength")
+     * @SuppressWarnings("PHPMD.NPathComplexity")
+     */
+    public function postIndex(PreferencesRequest $request): RedirectResponse
+    {
+        Log::debug('postIndex for preferences.');
+        // front page accounts
+        $frontpageAccounts = [];
+        if (is_array($request->input('frontpageAccounts')) && count($request->input('frontpageAccounts')) > 0) {
+            foreach ($request->input('frontpageAccounts') as $id) {
+                $frontpageAccounts[] = (int) $id;
+            }
+            Log::debug('Update frontpageAccounts', $frontpageAccounts);
+            Preferences::set('frontpageAccounts', $frontpageAccounts);
+        }
+
+        // extract notifications:
+        $keys              = array_map(function (string $value): string {
+            return sprintf('notification_%s', $value);
+        }, array_keys(config('notifications.notifications.user')));
+        $all               = $request->only($keys);
+        foreach (config('notifications.notifications.user') as $key => $info) {
+            $key = sprintf('notification_%s', $key);
+            if (array_key_exists($key, $all) && false === auth()->user()->hasRole('demo')) {
+                Log::debug(sprintf('update notification to true: %s', $key));
+                Preferences::set($key, true);
+
+                continue;
+            }
+            Log::debug(sprintf('update notification to false: %s', $key));
+            Preferences::set($key, false);
+        }
+        unset($all);
+
+        // view range:
+        Log::debug(sprintf('Let viewRange to "%s"', $request->input('viewRange')));
+        Preferences::set('viewRange', $request->input('viewRange'));
+        // forget session values:
+        session()->forget('start');
+        session()->forget('end');
+        session()->forget('range');
+
+        // notification settings, cannot be set by the demo user.
+        if (!auth()->user()->hasRole('demo')) {
+            $variables = ['slack_webhook_url', 'pushover_app_token', 'pushover_user_token', 'ntfy_server', 'ntfy_topic', 'ntfy_user', 'ntfy_pass'];
+            $all       = $request->only($variables);
+            foreach ($variables as $variable) {
+                if (!array_key_exists($variable, $all) || '' === $all[$variable]) {
+                    Preferences::delete($variable);
+                }
+                if (array_key_exists($variable, $all) && '' !== $all[$variable]) {
+                    Preferences::setEncrypted($variable, $all[$variable]);
+                }
+            }
+            Preferences::set('ntfy_auth', $all['ntfy_auth'] ?? false);
+        }
+        unset($all);
+
+        // convert primary
+        $convertToPrimary  = 1 === (int) $request->input('convertToPrimary');
+        if ($convertToPrimary && !$this->convertToPrimary) {
+            // set to true!
+            Log::debug('User sets convertToPrimary to true.');
+            Preferences::set('convert_to_primary', true);
+            $singleton = PreferencesSingleton::getInstance();
+            $singleton->resetPreferences();
+            event(new UserGroupChangedPrimaryCurrency(auth()->user()->userGroup));
+        }
+        Preferences::set('convert_to_primary', $convertToPrimary);
+
+        // custom fiscal year
+        $customFiscalYear  = 1 === (int) $request->input('customFiscalYear');
+        Preferences::set('customFiscalYear', $customFiscalYear);
+        $fiscalYearString  = (string) $request->input('fiscalYearStart');
+        if ('' !== $fiscalYearString) {
+            $fiscalYearStart = Carbon::parse($fiscalYearString, config('app.timezone'))->format('m-d');
+            Preferences::set('fiscalYearStart', $fiscalYearStart);
+        }
+
+        // save page size:
+        Preferences::set('listPageSize', 50);
+        $listPageSize      = (int) $request->input('listPageSize');
+        if ($listPageSize > 0 && $listPageSize < 1337) {
+            Preferences::set('listPageSize', $listPageSize);
+        }
+
+        // language:
+        /** @var Preference $currentLang */
+        $currentLang       = Preferences::get('language', 'en_US');
+        $lang              = $request->input('language');
+        if (array_key_exists($lang, config('firefly.languages'))) {
+            Preferences::set('language', $lang);
+        }
+        if ($currentLang->data !== $lang) {
+            // this string is untranslated on purpose.
+            session()->flash('info', 'All translations are supplied by volunteers. There might be errors and mistakes. I appreciate your feedback.');
+        }
+
+        // same for locale:
+        if (!auth()->user()->hasRole('demo')) {
+            $locale = (string) $request->input('locale');
+            $locale = '' === $locale ? null : $locale;
+            Preferences::set('locale', $locale);
+        }
+
+        // optional fields for transactions:
+        $setOptions        = $request->input('tj') ?? [];
+        $optionalTj        = [
+            'interest_date'      => array_key_exists('interest_date', $setOptions),
+            'book_date'          => array_key_exists('book_date', $setOptions),
+            'process_date'       => array_key_exists('process_date', $setOptions),
+            'due_date'           => array_key_exists('due_date', $setOptions),
+            'payment_date'       => array_key_exists('payment_date', $setOptions),
+            'invoice_date'       => array_key_exists('invoice_date', $setOptions),
+            'internal_reference' => array_key_exists('internal_reference', $setOptions),
+            'notes'              => array_key_exists('notes', $setOptions),
+            'attachments'        => array_key_exists('attachments', $setOptions),
+            'external_url'       => array_key_exists('external_url', $setOptions),
+            'location'           => array_key_exists('location', $setOptions),
+            'links'              => array_key_exists('links', $setOptions),
+        ];
+        Preferences::set('transaction_journal_optional_fields', $optionalTj);
+
+        // dark mode
+        $darkMode          = $request->input('darkMode') ?? 'browser';
+        if (in_array($darkMode, config('firefly.available_dark_modes'), true)) {
+            Preferences::set('darkMode', $darkMode);
+        }
+
+        // anonymous amounts?
+        $anonymous         = '1' === $request->input('anonymous');
+        Preferences::set('anonymous', $anonymous);
+
+        // save and continue
+        session()->flash('success', (string) trans('firefly.saved_preferences'));
+        Preferences::mark();
+        Log::debug('Done saving settings.');
+
+        return redirect(route('preferences.index'));
+    }
+
+    public function testNotification(Request $request): mixed
+    {
+        $all     = $request->only(['channel']);
+        $channel = $all['channel'] ?? '';
+
+        if (true === auth()->user()->hasRole('demo')) {
+            session()->flash('error', (string) trans('firefly.not_available_demo_user'));
+
+            return redirect(route('preferences.index'));
+        }
+
+        switch ($channel) {
+            default:
+                session()->flash('error', (string) trans('firefly.notification_test_failed', ['channel' => $channel]));
+
+                break;
+
+            case 'email':
+            case 'slack':
+            case 'pushover':
+            case 'ntfy':
+                /** @var User $user */
+                $user = auth()->user();
+                Log::debug(sprintf('Now in testNotification("%s") controller.', $channel));
+                event(new UserTestsNotificationChannel($channel, $user));
+                session()->flash('success', (string) trans('firefly.notification_test_executed', ['channel' => $channel]));
+        }
+
+        return '';
+    }
+}

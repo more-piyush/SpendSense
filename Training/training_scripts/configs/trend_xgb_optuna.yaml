@@ -1,0 +1,34 @@
+# configs/trend_xgb_optuna.yaml
+# XGBoost with Optuna Bayesian hyperparameter tuning
+# Purpose: Find optimal hyperparameters automatically via 50 trials.
+#   Expected to be the best-performing candidate but most expensive to train.
+
+run_name: "trend_xgb_optuna_tuned"
+model_type: xgboost_optuna
+task_type: trend
+model_id: trend_xgb_optuna
+model_family: xgboost_optuna
+training_mode: initial
+registry_path: s3://mlflow/registry
+
+# Optuna settings
+optuna_n_trials: 50
+
+# Isolation Forest ensemble (trained after best XGBoost is found)
+train_isolation_forest: true
+iso_n_estimators: 100
+iso_contamination: 0.1
+iso_max_samples: 256
+xgb_ensemble_weight: 0.6
+
+# Data — loaded from MinIO training-data bucket (produced by teammate's data pipeline)
+data_path: s3://training-data/bls_pipeline/trend_training.parquet
+s3:
+  endpoint_url: http://CHAMELEON_FLOATING_IP:9000
+  region: us-east-1
+
+# MLflow
+mlflow_tracking_uri: http://CHAMELEON_FLOATING_IP:8000
+experiment_name: trend_detection
+direct_artifact_experiment_name: trend_detection_s3
+artifact_location: s3://mlflow/experiments/trend_detection_s3

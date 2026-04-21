@@ -1,0 +1,11 @@
+# configs/promote.yaml
+# Model promotion gating configuration
+
+# Model type: DISTILBERT_CATEGORIZATION or XGBOOST_TREND
+model_type: DISTILBERT_CATEGORIZATION
+
+# MLflow
+mlflow_tracking_uri: http://CHAMELEON_FLOATING_IP:8000
+
+# Registry
+registry_path: s3://mlflow/registry

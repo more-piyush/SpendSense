@@ -1,0 +1,48 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: set-active-models
+  namespace: firefly-platform
+spec:
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: set-active-models
+          image: docker.io/spendsense/training:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: minio-secret
+                  key: MINIO_ROOT_USER
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-secret
+                  key: MINIO_ROOT_PASSWORD
+            - name: MLFLOW_S3_ENDPOINT_URL
+              value: http://minio.firefly-platform.svc.cluster.local:9000
+            - name: SERVING_ARTIFACT_ROOT
+              value: s3://mlflow/serving-artifacts
+          command:
+            - "python"
+            - "set_active_models.py"
+            - "--registry-path"
+            - "s3://mlflow/registry"
+            - "--auto-select"
+          volumeMounts:
+            - name: training-data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "2Gi"
+            limits:
+              cpu: "2"
+              memory: "4Gi"
+      volumes:
+        - name: training-data
+          persistentVolumeClaim:
+            claimName: training-state-pvc

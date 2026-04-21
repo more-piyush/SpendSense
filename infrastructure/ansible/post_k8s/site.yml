@@ -1,0 +1,66 @@
+---
+- name: Bootstrap cluster extras after Kubernetes install
+  hosts: control_plane
+  become: true
+  run_once: true
+  vars:
+    k8s_manifest_src: "{{ playbook_dir }}/../../k8s"
+    k8s_manifest_dest: /opt/spendsense/k8s
+  tasks:
+    - name: Ensure kubectl shim exists
+      ansible.builtin.file:
+        src: /usr/local/bin/k3s
+        dest: /usr/local/bin/kubectl
+        state: link
+        force: true
+
+    - name: Create working directory
+      ansible.builtin.file:
+        path: "{{ k8s_manifest_dest }}"
+        state: directory
+        mode: "0755"
+
+    - name: Copy repository Kubernetes manifests to control plane
+      ansible.builtin.copy:
+        src: "{{ k8s_manifest_src }}/"
+        dest: "{{ k8s_manifest_dest }}/"
+        mode: preserve
+
+    - name: Create platform namespace
+      ansible.builtin.command: kubectl apply -f {{ k8s_manifest_dest }}/namespace/namespace.yaml
+      changed_when: false
+
+    - name: Apply storage manifests
+      ansible.builtin.command: kubectl apply -f {{ item }}
+      loop:
+        - "{{ k8s_manifest_dest }}/storage/pvc-postgres.yaml"
+        - "{{ k8s_manifest_dest }}/storage/pvc-minio.yaml"
+        - "{{ k8s_manifest_dest }}/storage/pvc-training-state.yaml"
+      changed_when: false
+
+    - name: Fetch kubeconfig to local machine
+      ansible.builtin.fetch:
+        src: /etc/rancher/k3s/k3s.yaml
+        dest: /tmp/spendsense-kubeconfig
+        flat: true
+
+    - name: Rewrite kubeconfig server endpoint locally
+      delegate_to: localhost
+      ansible.builtin.replace:
+        path: /tmp/spendsense-kubeconfig
+        regexp: 'https://127\.0\.0\.1:6443'
+        replace: "https://{{ ansible_host }}:6443"
+
+    - name: Ensure local kubeconfig directory exists
+      delegate_to: localhost
+      ansible.builtin.file:
+        path: "{{ kubeconfig_local_path | dirname }}"
+        state: directory
+        mode: "0700"
+
+    - name: Install kubeconfig locally
+      delegate_to: localhost
+      ansible.builtin.copy:
+        src: /tmp/spendsense-kubeconfig
+        dest: "{{ kubeconfig_local_path }}"
+        mode: "0600"

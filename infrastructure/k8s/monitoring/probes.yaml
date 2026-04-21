@@ -1,0 +1,20 @@
+apiVersion: monitoring.coreos.com/v1
+kind: Probe
+metadata:
+  name: spendsense-health
+  namespace: monitoring
+  labels:
+    release: monitoring
+spec:
+  jobName: spendsense-blackbox
+  interval: 30s
+  module: http_2xx
+  prober:
+    url: blackbox-exporter.monitoring.svc.cluster.local:19115
+  targets:
+    staticConfig:
+      static:
+        - http://serving-baseline.firefly-platform.svc.cluster.local:8000/health
+        - http://minio.firefly-platform.svc.cluster.local:9000/minio/health/live
+        - http://mlflow.firefly-platform.svc.cluster.local:5000/
+        - http://firefly.firefly-platform.svc.cluster.local:8080/

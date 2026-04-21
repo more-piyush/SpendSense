@@ -1,0 +1,29 @@
+# configs/trend_rf_baseline.yaml
+# Baseline: Random Forest Regressor
+# Purpose: Simple ensemble baseline for trend detection.
+
+run_name: "trend_rf_baseline"
+model_type: random_forest
+task_type: trend
+model_id: trend_rf_baseline
+model_family: random_forest
+training_mode: initial
+registry_path: s3://mlflow/registry
+
+# Random Forest settings
+n_estimators: 100
+max_depth: 10
+min_samples_split: 5
+min_samples_leaf: 2
+
+# Data — loaded from MinIO training-data bucket (produced by teammate's data pipeline)
+data_path: s3://training-data/bls_pipeline/trend_training.parquet
+s3:
+  endpoint_url: http://CHAMELEON_FLOATING_IP:9000
+  region: us-east-1
+
+# MLflow
+mlflow_tracking_uri: http://CHAMELEON_FLOATING_IP:8000
+experiment_name: trend_detection
+direct_artifact_experiment_name: trend_detection_s3
+artifact_location: s3://mlflow/experiments/trend_detection_s3

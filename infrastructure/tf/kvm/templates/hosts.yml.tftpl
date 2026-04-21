@@ -1,0 +1,18 @@
+all:
+  vars:
+    ansible_user: ${ssh_user}
+  children:
+    control_plane:
+      hosts:
+        ${control_plane_name}:
+          ansible_host: ${control_plane_ip}
+    workers:
+      hosts:
+%{ for worker in worker_nodes ~}
+        ${worker.name}:
+          ansible_host: ${worker.ip}
+%{ endfor ~}
+    k8s_cluster:
+      children:
+        control_plane: {}
+        workers: {}

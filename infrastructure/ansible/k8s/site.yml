@@ -1,0 +1,37 @@
+---
+- name: Install K3s control plane
+  hosts: control_plane
+  become: true
+  vars:
+    install_k3s_server_cmd: >
+      curl -sfL https://get.k3s.io |
+      INSTALL_K3S_CHANNEL={{ k3s_install_channel }}
+      K3S_TOKEN={{ k3s_token }}
+      sh -s - server {{ k3s_server_extra_args }}
+  tasks:
+    - name: Install K3s server
+      ansible.builtin.shell: "{{ install_k3s_server_cmd }}"
+      args:
+        creates: /etc/systemd/system/k3s.service
+
+    - name: Wait for node-token to exist
+      ansible.builtin.wait_for:
+        path: /var/lib/rancher/k3s/server/node-token
+        timeout: 120
+
+- name: Join worker nodes to K3s cluster
+  hosts: workers
+  become: true
+  vars:
+    server_host: "{{ hostvars[groups['control_plane'][0]].ansible_host }}"
+    install_k3s_agent_cmd: >
+      curl -sfL https://get.k3s.io |
+      INSTALL_K3S_CHANNEL={{ k3s_install_channel }}
+      K3S_URL=https://{{ server_host }}:6443
+      K3S_TOKEN={{ k3s_token }}
+      sh -s - agent
+  tasks:
+    - name: Install K3s agent
+      ansible.builtin.shell: "{{ install_k3s_agent_cmd }}"
+      args:
+        creates: /etc/systemd/system/k3s-agent.service

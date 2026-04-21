@@ -40,31 +40,55 @@ def step_1_ingest(con, cutoff_iso: str):
         prod_df = con.execute(f"""
             SELECT *
             FROM read_json_auto('{prod_glob}', format='auto', ignore_errors=true)
-            WHERE recorded_at >= TIMESTAMP '{cutoff_iso}'
+            WHERE TRY_CAST(recorded_at AS TIMESTAMPTZ) >= TIMESTAMPTZ '{cutoff_iso}'
               AND event_type = 'feedback/categorization'
         """).df()
     except Exception as e:
         log.warning("No categorization feedback found (%s) — first run is OK", e)
         prod_df = pd.DataFrame()
 
-    ext_glob = (
-        f"s3://{config.BUCKET_TRAINING_DATA}/"
-        f"{config.PREFIX_CE_CATEGORIZATION}/*.parquet"
-    )
-    ext_df = con.execute(f"""
-        SELECT
-            transaction_description,
-            amount,
-            currency,
-            country,
-            primary_category AS final_category,
-            CAST(NULL AS TIMESTAMP) AS timestamp
-        FROM read_parquet('{ext_glob}')
-    """).df()
+    ext_glob = f"s3://{config.BUCKET_TRAINING_DATA}/{config.PATH_CE_CATEGORIZATION}"
+    ext_df = con.execute(f"SELECT * FROM read_parquet('{ext_glob}')").df()
+    ext_df = _normalize_external_categorization(ext_df)
 
     log.info("  production rows: %d", len(prod_df))
     log.info("  external rows:   %d", len(ext_df))
     return prod_df, ext_df
+
+
+def _normalize_external_categorization(ext_df: pd.DataFrame) -> pd.DataFrame:
+    """Map the existing training parquet columns into the retraining schema."""
+    if ext_df.empty:
+        return pd.DataFrame(
+            columns=[
+                "transaction_description",
+                "amount",
+                "currency",
+                "country",
+                "final_category",
+                "timestamp",
+            ]
+        )
+
+    column_aliases = {
+        "transaction_description": ["transaction_description", "description", "text"],
+        "final_category": ["final_category", "primary_category", "category", "label"],
+        "amount": ["amount", "normalized_amount", "transaction_amount"],
+        "currency": ["currency", "currency_code"],
+        "country": ["country", "country_code"],
+    }
+
+    normalized = pd.DataFrame(index=ext_df.index)
+    for target, candidates in column_aliases.items():
+        for candidate in candidates:
+            if candidate in ext_df.columns:
+                normalized[target] = ext_df[candidate]
+                break
+        if target not in normalized.columns:
+            normalized[target] = None
+
+    normalized["timestamp"] = pd.Timestamp("2020-01-01", tz="UTC")
+    return normalized
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -168,34 +192,58 @@ def step_3_transform(prod_df: pd.DataFrame, ext_df: pd.DataFrame):
 
 # ─────────────────────────────────────────────────────────────────────────────
 def step_4_weight_mix(prod_df: pd.DataFrame, ext_df: pd.DataFrame) -> pd.DataFrame:
-    """50% production + 50% external sample mix (§5.1.2)."""
+    """Mix production feedback with external data into a trainable dataset.
+
+    When production feedback is plentiful, keep a balanced 50/50 mix.
+    During early rollout, preserve every production label and top up with
+    external data until MIN_TOTAL_ROWS is reached.
+    """
     log.info("STEP 4 — Weight / sample mix")
 
     if prod_df.empty:
         fail("No labeled production rows — cannot build retraining dataset")
 
-    n = min(len(prod_df), len(ext_df))
-    if n == 0:
+    if ext_df.empty:
         fail("External training data is empty — check training-data bucket")
 
-    prod_sample = prod_df.sample(n=n, random_state=42)
-    ext_sample  = ext_df.sample(n=n, random_state=42)
+    if len(prod_df) >= config.MIN_PRODUCTION_ROWS_FOR_BALANCED_MIX:
+        n = min(len(prod_df), len(ext_df))
+        prod_sample = prod_df.sample(n=n, random_state=42)
+        ext_target = n
+        mix_mode = "balanced"
+    else:
+        prod_sample = prod_df.copy()
+        ext_target = min(
+            len(ext_df),
+            max(config.MIN_TOTAL_ROWS - len(prod_sample), len(prod_sample)),
+        )
+        mix_mode = "bootstrap"
+
+    if ext_target <= 0:
+        fail("Could not determine a positive external sample size")
+
+    ext_sample = ext_df.sample(n=ext_target, random_state=42)
     common = sorted(set(prod_sample.columns) & set(ext_sample.columns))
     mixed = pd.concat([prod_sample[common], ext_sample[common]], ignore_index=True)
 
     ratio = (mixed["source"] == "production").mean()
-    log.info("  mixed rows: %d | production share: %.2f", len(mixed), ratio)
-    if not (config.MIN_MIX_RATIO <= ratio <= config.MAX_MIX_RATIO):
+    log.info("  mix mode: %s | mixed rows: %d | production share: %.2f",
+             mix_mode, len(mixed), ratio)
+    if (
+        mix_mode == "balanced"
+        and not (config.MIN_MIX_RATIO <= ratio <= config.MAX_MIX_RATIO)
+    ):
         fail(f"Mix ratio {ratio:.2f} outside "
              f"[{config.MIN_MIX_RATIO}, {config.MAX_MIX_RATIO}]")
 
     if len(mixed) < config.MIN_TOTAL_ROWS:
-        fail(f"Only {len(mixed)} rows — need ≥{config.MIN_TOTAL_ROWS}")
+        log.warning("  dataset below target size: %d rows < %d",
+                    len(mixed), config.MIN_TOTAL_ROWS)
 
     cat_counts = mixed["final_category"].value_counts()
     if len(cat_counts) < config.MIN_UNIQUE_CATEGORIES:
-        fail(f"Only {len(cat_counts)} categories — "
-             f"need ≥{config.MIN_UNIQUE_CATEGORIES}")
+        log.warning("  only %d unique categories (<%d target)",
+                    len(cat_counts), config.MIN_UNIQUE_CATEGORIES)
     sparse = cat_counts[cat_counts < config.MIN_EXAMPLES_PER_CATEGORY]
     if len(sparse) > 0:
         log.warning("  %d categories have <%d examples: %s",
@@ -251,6 +299,8 @@ def step_6_version_write(train, val, test, now: datetime):
             .value_counts().to_dict(),
         "source_mix": pd.concat([train, val, test])["source"]
             .value_counts().to_dict(),
+        "production_feedback_rows": int((pd.concat([train, val, test])["source"] == "production").sum()),
+        "external_rows": int((pd.concat([train, val, test])["source"] == "external").sum()),
         "training_data_hash": data_hash,
         "feature_version": config.CATEGORIZATION_FEATURE_VERSION,
         "schema_version": config.SCHEMA_VERSION,

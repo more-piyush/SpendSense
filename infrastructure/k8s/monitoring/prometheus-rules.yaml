@@ -1,0 +1,118 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: spendsense-platform-rules
+  namespace: monitoring
+  labels:
+    release: monitoring
+spec:
+  groups:
+    - name: spendsense.platform
+      rules:
+        - alert: SpendSenseServingUnavailable
+          expr: kube_deployment_status_replicas_unavailable{namespace="firefly-platform",deployment="serving-baseline"} > 0
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: SpendSense serving deployment has unavailable replicas
+            description: The serving-baseline deployment has at least one unavailable replica for 10 minutes.
+
+        - alert: SpendSenseMLflowUnavailable
+          expr: kube_deployment_status_replicas_unavailable{namespace="firefly-platform",deployment="mlflow"} > 0
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: MLflow deployment has unavailable replicas
+            description: The mlflow deployment has at least one unavailable replica for 10 minutes.
+
+        - alert: SpendSensePostgresUnavailable
+          expr: kube_deployment_status_replicas_unavailable{namespace="firefly-platform",deployment="postgres"} > 0
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: PostgreSQL deployment has unavailable replicas
+            description: The postgres deployment has at least one unavailable replica for 10 minutes.
+
+        - alert: SpendSenseMinioUnavailable
+          expr: kube_deployment_status_replicas_unavailable{namespace="firefly-platform",deployment="minio"} > 0
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: MinIO deployment has unavailable replicas
+            description: The minio deployment has at least one unavailable replica for 10 minutes.
+
+        - alert: SpendSenseFireflyUnavailable
+          expr: kube_deployment_status_replicas_unavailable{namespace="firefly-platform",deployment="firefly"} > 0
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: Firefly deployment has unavailable replicas
+            description: The firefly deployment has at least one unavailable replica for 10 minutes.
+
+        - alert: SpendSenseFrequentPodRestarts
+          expr: increase(kube_pod_container_status_restarts_total{namespace="firefly-platform"}[30m]) > 3
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: Pods in firefly-platform are restarting frequently
+            description: A container in the firefly-platform namespace restarted more than 3 times in 30 minutes.
+
+        - alert: SpendSenseCronJobFailures
+          expr: increase(kube_job_status_failed{namespace="firefly-platform",job_name=~"data-pipeline-nightly.*|nightly-eval.*|monthly-retrain.*"}[6h]) > 0
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: A SpendSense scheduled job failed
+            description: One of the platform CronJobs has failed within the last 6 hours.
+
+        - alert: SpendSensePVCUsageHigh
+          expr: (1 - (kubelet_volume_stats_available_bytes{namespace="firefly-platform",persistentvolumeclaim=~"postgres-pvc|minio-pvc|training-state-pvc"} / kubelet_volume_stats_capacity_bytes{namespace="firefly-platform",persistentvolumeclaim=~"postgres-pvc|minio-pvc|training-state-pvc"})) > 0.80
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: A SpendSense PVC is over 80% full
+            description: One of the stateful PVCs in firefly-platform is above 80% usage.
+
+        - alert: SpendSenseDataDiskUsageHigh
+          expr: (1 - (node_filesystem_avail_bytes{mountpoint="/data",fstype!=""} / node_filesystem_size_bytes{mountpoint="/data",fstype!=""})) > 0.80
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: The /data filesystem is over 80% full
+            description: The attached data volume mounted at /data is above 80% usage.
+
+        - alert: SpendSenseBlackboxProbeFailed
+          expr: probe_success{job="spendsense-blackbox"} == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: A SpendSense health endpoint probe is failing
+            description: The blackbox probe for {{ $labels.instance }} has been failing for 5 minutes.
+
+        - alert: SpendSenseProbeLatencyHigh
+          expr: probe_duration_seconds{job="spendsense-blackbox"} > 2
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: A SpendSense health endpoint is responding slowly
+            description: The blackbox probe for {{ $labels.instance }} has taken more than 2 seconds for 10 minutes.
+
+        - alert: SpendSenseMinioMetricsDown
+          expr: up{namespace="firefly-platform",service="minio"} == 0
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: MinIO metrics are not being scraped
+            description: Prometheus cannot scrape MinIO metrics from the minio service.

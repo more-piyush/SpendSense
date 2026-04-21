@@ -1,0 +1,74 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: training-config
+  namespace: firefly-platform
+data:
+  retrain_categorization.yaml: |
+    model_type: DISTILBERT_CATEGORIZATION
+
+    feedback_source: file
+    feedback_path: s3://production-logs/serving/feedback/categorization/
+
+    schedule: weekly
+    override_rate_threshold: 0.15
+    last_retrain_date: null
+
+    base_model: distilbert-base-uncased
+    phase2_learning_rate: 0.000005
+    batch_size: 32
+    epochs: 3
+    freeze_layers: 3
+
+    production_mix_ratio: 0.5
+    external_data_path: s3://training-data/bls_pipeline/categorization_training.parquet
+
+    s3:
+      endpoint_url: http://minio.firefly-platform.svc.cluster.local:9000
+      region: us-east-1
+
+    reference_features_path: null
+    current_features_path: null
+
+    mlflow_tracking_uri: http://mlflow.firefly-platform.svc.cluster.local:5000
+    experiment_name: categorization_retrain
+    direct_artifact_experiment_name: categorization_retrain_s3
+    artifact_location: s3://mlflow/experiments/categorization_retrain_s3
+    registry_path: s3://mlflow/registry
+
+    state_file: /data/retrain_state_categorization.json
+    retrain_data_path: /tmp/retrain_categorization.parquet
+
+  retrain_trend.yaml: |
+    model_type: XGBOOST_TREND
+
+    feedback_source: file
+    feedback_path: s3://production-logs/serving/feedback/trend_detection/
+
+    schedule: monthly
+    min_feedback_signals: 10
+    last_retrain_date: null
+
+    n_estimators: 100
+    max_depth: 6
+    phase2_learning_rate: 0.01
+    reg_alpha: 0.2
+    reg_lambda: 2.0
+
+    external_data_path: s3://training-data/bls_pipeline/trend_training.parquet
+
+    s3:
+      endpoint_url: http://minio.firefly-platform.svc.cluster.local:9000
+      region: us-east-1
+
+    reference_features_path: null
+    current_features_path: null
+
+    mlflow_tracking_uri: http://mlflow.firefly-platform.svc.cluster.local:5000
+    experiment_name: trend_retrain
+    direct_artifact_experiment_name: trend_retrain_s3
+    artifact_location: s3://mlflow/experiments/trend_retrain_s3
+    registry_path: s3://mlflow/registry
+
+    state_file: /data/retrain_state_trend.json
+    retrain_data_path: /tmp/retrain_trend.parquet

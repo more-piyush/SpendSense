@@ -1,0 +1,13 @@
+suffix      = "REPLACE_WITH_SUFFIX"
+key         = "REPLACE_WITH_CHAMELEON_KEYPAIR"
+reservation = "REPLACE_WITH_RESERVATION_UUID"
+
+ssh_user   = "cc"
+image_name = "CC-Ubuntu24.04"
+
+nodes = {
+  node1 = "192.168.1.11"
+}
+
+data_volume_name = "OPTIONAL_EXISTING_VOLUME_NAME"
+floating_ip_pool = "public"

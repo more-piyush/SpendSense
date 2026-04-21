@@ -1,0 +1,89 @@
+---
+- name: Prepare Chameleon nodes for Kubernetes
+  hosts: k8s_cluster
+  become: true
+  tasks:
+    - name: Install base packages
+      ansible.builtin.apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+          - jq
+          - nfs-common
+        state: present
+        update_cache: true
+
+    - name: Disable swap immediately
+      ansible.builtin.command: swapoff -a
+      changed_when: false
+
+    - name: Remove swap from fstab
+      ansible.builtin.replace:
+        path: /etc/fstab
+        regexp: '^(.*\sswap\s+sw\s+.*)$'
+        replace: '# \1'
+
+    - name: Persist required kernel modules
+      ansible.builtin.copy:
+        dest: /etc/modules-load.d/k8s.conf
+        mode: "0644"
+        content: |
+          overlay
+          br_netfilter
+
+    - name: Load overlay kernel module
+      ansible.builtin.command: modprobe overlay
+      changed_when: false
+
+    - name: Load br_netfilter kernel module
+      ansible.builtin.command: modprobe br_netfilter
+      changed_when: false
+
+    - name: Configure Kubernetes sysctl settings
+      ansible.builtin.copy:
+        dest: /etc/sysctl.d/99-kubernetes-cri.conf
+        mode: "0644"
+        content: |
+          net.bridge.bridge-nf-call-iptables = 1
+          net.bridge.bridge-nf-call-ip6tables = 1
+          net.ipv4.ip_forward = 1
+
+    - name: Apply sysctl settings
+      ansible.builtin.command: sysctl --system
+      changed_when: false
+
+    - name: Wait for attached data volume device on control plane
+      ansible.builtin.wait_for:
+        path: "{{ data_volume_device }}"
+        timeout: 120
+      when: inventory_hostname in groups['control_plane']
+
+    - name: Detect existing filesystem on attached data volume
+      ansible.builtin.command: blkid -o value -s TYPE {{ data_volume_device }}
+      register: data_volume_fs
+      failed_when: false
+      changed_when: false
+      when: inventory_hostname in groups['control_plane']
+
+    - name: Create ext4 filesystem on attached data volume if needed
+      ansible.builtin.command: mkfs.{{ data_volume_filesystem }} -F {{ data_volume_device }}
+      when:
+        - inventory_hostname in groups['control_plane']
+        - data_volume_fs.stdout | trim == ""
+
+    - name: Ensure data mount path exists on control plane
+      ansible.builtin.file:
+        path: "{{ data_volume_mount_path }}"
+        state: directory
+        mode: "0755"
+      when: inventory_hostname in groups['control_plane']
+
+    - name: Mount attached data volume on control plane
+      ansible.posix.mount:
+        path: "{{ data_volume_mount_path }}"
+        src: "{{ data_volume_device }}"
+        fstype: "{{ data_volume_filesystem }}"
+        state: mounted
+      when: inventory_hostname in groups['control_plane']

@@ -1,0 +1,46 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: firefly-bootstrap
+  namespace: firefly-platform
+spec:
+  backoffLimit: 4
+  template:
+    spec:
+      securityContext:
+        fsGroup: 33
+        fsGroupChangePolicy: "OnRootMismatch"
+      restartPolicy: OnFailure
+      containers:
+        - name: firefly-bootstrap
+          image: spendsense/firefly-custom:latest
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            runAsUser: 33
+            runAsGroup: 33
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+              php artisan optimize:clear
+              if [ ! -f storage/oauth-private.key ] || [ ! -f storage/oauth-public.key ]; then
+                php artisan firefly-iii:laravel-passport-keys
+              fi
+              php artisan migrate --force
+              php artisan firefly-iii:upgrade-database
+          envFrom:
+            - configMapRef:
+                name: firefly-config
+          env:
+            - name: APP_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: firefly-secret
+                  key: APP_KEY
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: POSTGRES_PASSWORD

@@ -1,0 +1,139 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: spendsense-overview-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  spendsense-overview.json: |
+    {
+      "annotations": {"list": []},
+      "editable": true,
+      "graphTooltip": 0,
+      "panels": [
+        {
+          "type": "stat",
+          "title": "Serving Probe Success",
+          "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+          "targets": [
+            {"expr": "max(probe_success{job=\"spendsense-blackbox\",instance=\"http://serving-baseline.firefly-platform.svc.cluster.local:8000/health\"})", "refId": "A"}
+          ],
+          "fieldConfig": {"defaults": {"mappings": [], "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}}}
+        },
+        {
+          "type": "stat",
+          "title": "MinIO Probe Success",
+          "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
+          "targets": [
+            {"expr": "max(probe_success{job=\"spendsense-blackbox\",instance=\"http://minio.firefly-platform.svc.cluster.local:9000/minio/health/live\"})", "refId": "A"}
+          ],
+          "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}}}
+        },
+        {
+          "type": "stat",
+          "title": "MLflow Probe Success",
+          "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
+          "targets": [
+            {"expr": "max(probe_success{job=\"spendsense-blackbox\",instance=\"http://mlflow.firefly-platform.svc.cluster.local:5000/\"})", "refId": "A"}
+          ],
+          "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}}}
+        },
+        {
+          "type": "stat",
+          "title": "Firefly Probe Success",
+          "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0},
+          "targets": [
+            {"expr": "max(probe_success{job=\"spendsense-blackbox\",instance=\"http://firefly.firefly-platform.svc.cluster.local:8080/\"})", "refId": "A"}
+          ],
+          "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}}}
+        },
+        {
+          "type": "timeseries",
+          "title": "Pod Restarts",
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
+          "targets": [
+            {"expr": "sum by (pod) (increase(kube_pod_container_status_restarts_total{namespace=\"firefly-platform\"}[1h]))", "legendFormat": "{{pod}}", "refId": "A"}
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "PVC Usage %",
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
+          "targets": [
+            {"expr": "100 * (1 - (kubelet_volume_stats_available_bytes{namespace=\"firefly-platform\",persistentvolumeclaim=~\"postgres-pvc|minio-pvc|training-state-pvc\"} / kubelet_volume_stats_capacity_bytes{namespace=\"firefly-platform\",persistentvolumeclaim=~\"postgres-pvc|minio-pvc|training-state-pvc\"}))", "legendFormat": "{{persistentvolumeclaim}}", "refId": "A"}
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "/data Disk Usage %",
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12},
+          "targets": [
+            {"expr": "100 * (1 - (node_filesystem_avail_bytes{mountpoint=\"/data\",fstype!=\"\"} / node_filesystem_size_bytes{mountpoint=\"/data\",fstype!=\"\"}))", "legendFormat": "{{instance}}", "refId": "A"}
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "Blackbox Probe Duration",
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12},
+          "targets": [
+            {"expr": "probe_duration_seconds{job=\"spendsense-blackbox\"}", "legendFormat": "{{instance}}", "refId": "A"}
+          ]
+        }
+      ],
+      "schemaVersion": 39,
+      "style": "dark",
+      "tags": ["spendsense", "overview"],
+      "templating": {"list": []},
+      "time": {"from": "now-6h", "to": "now"},
+      "title": "SpendSense Overview",
+      "version": 1
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: spendsense-jobs-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  spendsense-jobs.json: |
+    {
+      "annotations": {"list": []},
+      "editable": true,
+      "graphTooltip": 0,
+      "panels": [
+        {
+          "type": "timeseries",
+          "title": "CronJob Failures",
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+          "targets": [
+            {"expr": "sum by (job_name) (increase(kube_job_status_failed{namespace=\"firefly-platform\",job_name=~\"data-pipeline-nightly.*|nightly-eval.*|monthly-retrain.*\"}[24h]))", "legendFormat": "{{job_name}}", "refId": "A"}
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "CronJob Successes",
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+          "targets": [
+            {"expr": "sum by (job_name) (increase(kube_job_status_succeeded{namespace=\"firefly-platform\",job_name=~\"data-pipeline-nightly.*|nightly-eval.*|monthly-retrain.*\"}[24h]))", "legendFormat": "{{job_name}}", "refId": "A"}
+          ]
+        },
+        {
+          "type": "table",
+          "title": "Recent Job Failures",
+          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 8},
+          "targets": [
+            {"expr": "kube_job_status_failed{namespace=\"firefly-platform\"}", "format": "table", "instant": true, "refId": "A"}
+          ]
+        }
+      ],
+      "schemaVersion": 39,
+      "style": "dark",
+      "tags": ["spendsense", "jobs"],
+      "templating": {"list": []},
+      "time": {"from": "now-24h", "to": "now"},
+      "title": "SpendSense Jobs",
+      "version": 1
+    }

@@ -1,5 +1,0 @@
-FROM python:3.11-slim
-WORKDIR /app
-RUN pip install requests pandas minio pyarrow pyyaml boto3
-COPY ingest_bls_data.py .
-CMD ["python3", "ingest_bls_data.py"]

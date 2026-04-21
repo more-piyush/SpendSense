@@ -1,3 +1,15 @@
-.env
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraform.lock.hcl
+infrastructure/ansible/inventory/chameleon/hosts.yml
+infrastructure/ansible/.ansible/
+infrastructure/tf/kvm/clouds.yaml
 __pycache__/
 *.pyc
+.env

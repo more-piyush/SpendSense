@@ -1,0 +1,4 @@
+- import_playbook: pre_k8s/site.yml
+- import_playbook: k8s/site.yml
+- import_playbook: post_k8s/site.yml
+- import_playbook: argocd/site.yml

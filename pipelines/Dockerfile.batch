@@ -1,5 +1,0 @@
-FROM python:3.11-slim
-WORKDIR /app
-RUN pip install minio pandas pyarrow numpy
-COPY batch_training_pipeline.py .
-CMD ["python3", "batch_training_pipeline.py"]

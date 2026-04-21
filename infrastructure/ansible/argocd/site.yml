@@ -1,0 +1,27 @@
+---
+- name: Install and register Argo CD
+  hosts: control_plane
+  become: true
+  run_once: true
+  vars:
+    argocd_app_manifest: /tmp/spendsense-platform-app.yaml
+  tasks:
+    - name: Ensure Argo CD namespace exists
+      ansible.builtin.command: kubectl create namespace {{ argocd_namespace }}
+      register: argocd_ns
+      failed_when: argocd_ns.rc != 0 and "AlreadyExists" not in argocd_ns.stderr
+      changed_when: "'created' in argocd_ns.stdout"
+
+    - name: Install Argo CD
+      ansible.builtin.command: kubectl apply -n {{ argocd_namespace }} -f {{ argocd_install_manifest }}
+      changed_when: false
+
+    - name: Render Argo CD application manifest
+      ansible.builtin.template:
+        src: templates/spendsense-platform-app.yaml.j2
+        dest: "{{ argocd_app_manifest }}"
+        mode: "0644"
+
+    - name: Register SpendSense platform app in Argo CD
+      ansible.builtin.command: kubectl apply -f {{ argocd_app_manifest }}
+      changed_when: false

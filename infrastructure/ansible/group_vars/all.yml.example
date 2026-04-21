@@ -1,0 +1,27 @@
+---
+ansible_user: cc
+
+# Replace with one stable secret before running the k8s playbook.
+k3s_token: "REPLACE_WITH_LONG_RANDOM_TOKEN"
+
+# Optional local kubeconfig destination.
+kubeconfig_local_path: "/tmp/spendsense-chameleon.yaml"
+
+# Keep these defaults unless you have a reason to change them.
+k3s_install_channel: "stable"
+k3s_server_extra_args: "--write-kubeconfig-mode 644 --disable traefik"
+
+# Optional attached data volume mount settings.
+data_volume_device: "/dev/vdb"
+data_volume_mount_path: "/data"
+data_volume_filesystem: "ext4"
+
+# Optional Argo CD placeholders.
+argocd_namespace: "argocd"
+argocd_install_manifest: "https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml"
+argocd_repo_url: "https://github.com/REPLACE_WITH_YOUR_ORG/SpendSense.git"
+argocd_target_revision: "main"
+argocd_app_name: "spendsense-platform"
+argocd_app_path: "infrastructure/k8s"
+argocd_destination_namespace: "firefly-platform"
+argocd_destination_server: "https://kubernetes.default.svc"

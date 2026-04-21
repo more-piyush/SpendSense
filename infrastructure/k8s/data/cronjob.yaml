@@ -1,0 +1,50 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: data-pipeline-nightly
+  namespace: firefly-platform
+spec:
+  schedule: "15 2 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: data-pipeline
+              image: firefly-data:latest
+              imagePullPolicy: IfNotPresent
+              command: ["python3", "data_pipeline.py", "/app/runtime-config/config.yaml"]
+              env:
+                - name: AWS_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: minio-secret
+                      key: MINIO_ROOT_USER
+                - name: AWS_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: minio-secret
+                      key: MINIO_ROOT_PASSWORD
+              volumeMounts:
+                - name: runtime-config
+                  mountPath: /app/runtime-config/config.yaml
+                  subPath: config.yaml
+                - name: pipeline-data
+                  mountPath: /data
+              resources:
+                requests:
+                  cpu: "1"
+                  memory: "2Gi"
+                limits:
+                  cpu: "4"
+                  memory: "8Gi"
+          volumes:
+            - name: runtime-config
+              configMap:
+                name: data-pipeline-config
+            - name: pipeline-data
+              emptyDir: {}

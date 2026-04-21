@@ -1,0 +1,39 @@
+# configs/retrain_categorization.yaml
+# Retraining configuration for DistilBERT categorization (Phase 2)
+
+model_type: DISTILBERT_CATEGORIZATION
+
+# Feedback collection
+feedback_source: file
+feedback_path: s3://production-logs/serving/feedback/categorization/
+
+# Trigger settings
+schedule: weekly
+override_rate_threshold: 0.15
+last_retrain_date: null
+
+# Phase 2 fine-tuning hyperparameters (Section 5.1.2)
+base_model: distilbert-base-uncased
+phase2_learning_rate: 0.000005  # 5e-6 (10x lower than Phase 1)
+batch_size: 32
+epochs: 3
+freeze_layers: 3               # Freeze layers 0-3; layers 4-5 + head trainable
+
+# Data mixing
+production_mix_ratio: 0.5      # 50% production + 50% external
+external_data_path: /data/categorization_training.parquet
+
+# Drift detection
+reference_features_path: /data/reference_features.parquet
+current_features_path: /data/current_features.parquet
+
+# Promotion
+mlflow_tracking_uri: http://CHAMELEON_FLOATING_IP:8000
+experiment_name: categorization_retrain
+direct_artifact_experiment_name: categorization_retrain_s3
+artifact_location: s3://mlflow/experiments/categorization_retrain_s3
+registry_path: s3://mlflow/registry
+
+# State persistence
+state_file: /data/retrain_state_categorization.json
+retrain_data_path: /tmp/retrain_categorization.parquet

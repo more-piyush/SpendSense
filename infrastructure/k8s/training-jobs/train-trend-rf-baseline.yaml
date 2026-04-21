@@ -1,0 +1,47 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: train-trend-rf-baseline
+  namespace: firefly-platform
+spec:
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: train-trend-rf-baseline
+          image: spendsense/training:latest
+          imagePullPolicy: IfNotPresent
+          command: ["python", "train_trend_detection.py", "/app/runtime-config/trend_rf_baseline.yaml"]
+          env:
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: minio-secret
+                  key: MINIO_ROOT_USER
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-secret
+                  key: MINIO_ROOT_PASSWORD
+            - name: MLFLOW_S3_ENDPOINT_URL
+              value: http://minio.firefly-platform.svc.cluster.local:9000
+          volumeMounts:
+            - name: runtime-config
+              mountPath: /app/runtime-config/trend_rf_baseline.yaml
+              subPath: trend_rf_baseline.yaml
+            - name: training-data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: "1"
+              memory: "4Gi"
+            limits:
+              cpu: "4"
+              memory: "16Gi"
+      volumes:
+        - name: runtime-config
+          configMap:
+            name: training-candidate-config
+        - name: training-data
+          persistentVolumeClaim:
+            claimName: training-state-pvc
