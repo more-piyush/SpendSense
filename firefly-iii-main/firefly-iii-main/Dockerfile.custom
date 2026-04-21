@@ -19,6 +19,8 @@ RUN npm --workspace resources/assets/v2 run build
 
 FROM fireflyiii/core:latest
 
+USER root
+
 WORKDIR /var/www/html
 
 COPY . /var/www/html/
