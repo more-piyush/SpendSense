@@ -2,6 +2,11 @@
 - name: Prepare Chameleon nodes for Kubernetes
   hosts: k8s_cluster
   become: true
+  handlers:
+    - name: Restart Docker
+      ansible.builtin.service:
+        name: docker
+        state: restarted
   tasks:
     - name: Install base packages
       ansible.builtin.apt:
@@ -100,3 +105,34 @@
         fstype: "{{ data_volume_filesystem }}"
         state: mounted
       when: inventory_hostname in groups['control_plane']
+
+    - name: Ensure heavy-storage directories exist on control plane
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - "{{ docker_data_root }}"
+        - "{{ k3s_data_dir }}"
+        - "{{ k3s_local_storage_path }}"
+        - "{{ build_cache_root }}"
+      when: inventory_hostname in groups['control_plane']
+
+    - name: Configure Docker data-root on control plane
+      ansible.builtin.copy:
+        dest: /etc/docker/daemon.json
+        mode: "0644"
+        content: |
+          {
+            "data-root": "{{ docker_data_root }}",
+            "log-driver": "json-file",
+            "log-opts": {
+              "max-size": "10m",
+              "max-file": "3"
+            }
+          }
+      when: inventory_hostname in groups['control_plane']
+      notify: Restart Docker
+
+    - name: Flush Docker restart if configuration changed
+      ansible.builtin.meta: flush_handlers

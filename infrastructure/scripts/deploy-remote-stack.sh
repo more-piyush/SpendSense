@@ -25,6 +25,8 @@ trap cleanup_on_error ERR
 
 export KUBECONFIG="${KUBECONFIG:-${HOME}/.kube/config}"
 export DOCKER_CMD="${DOCKER_CMD:-sudo docker}"
+export BUILD_CACHE_ROOT="${BUILD_CACHE_ROOT:-/data/tmp}"
+export TMPDIR="${BUILD_CACHE_ROOT}"
 
 if [[ ! -f "${KUBECONFIG}" && -f /etc/rancher/k3s/k3s.yaml ]]; then
   mkdir -p "${HOME}/.kube"
@@ -52,6 +54,7 @@ run kubectl get nodes
 
 phase "Phase 3/7 - Build and import runtime images"
 cd "${REPO_ROOT}"
+run mkdir -p "${BUILD_CACHE_ROOT}"
 images=(
   "firefly-data:latest|Data/pipelines/Dockerfile|Data/pipelines"
   "spendsense/training:latest|Training/training_scripts/Dockerfile|Training/training_scripts"
@@ -102,4 +105,3 @@ cat <<EOF
 [INFO] MinIO Console: http://${FLOATING_IP}:30901
 [INFO] Grafana: http://${FLOATING_IP}:30300
 EOF
-

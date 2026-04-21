@@ -1,6 +1,6 @@
 suffix      = "proj20"
 key         = "mlops_proj20"
-reservation = "ee9cd5a0-8d14-4f2e-b140-c143ac43c5fb"
+reservation = "c061a217-d565-43d6-a808-c34b604c1f34"
 
 ssh_user   = "cc"
 image_name = "CC-Ubuntu24.04"

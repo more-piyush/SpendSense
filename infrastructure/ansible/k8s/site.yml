@@ -7,7 +7,10 @@
       curl -sfL https://get.k3s.io |
       INSTALL_K3S_CHANNEL={{ k3s_install_channel }}
       K3S_TOKEN={{ k3s_token }}
-      sh -s - server {{ k3s_server_extra_args }}
+      sh -s - server
+      --data-dir {{ k3s_data_dir }}
+      --default-local-storage-path {{ k3s_local_storage_path }}
+      {{ k3s_server_extra_args }}
   tasks:
     - name: Install K3s server
       ansible.builtin.shell: "{{ install_k3s_server_cmd }}"
@@ -16,7 +19,7 @@
 
     - name: Wait for node-token to exist
       ansible.builtin.wait_for:
-        path: /var/lib/rancher/k3s/server/node-token
+        path: "{{ k3s_data_dir }}/server/node-token"
         timeout: 120
 
 - name: Join worker nodes to K3s cluster

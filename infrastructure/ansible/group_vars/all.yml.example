@@ -15,6 +15,10 @@ k3s_server_extra_args: "--write-kubeconfig-mode 644 --disable traefik"
 data_volume_device: "/dev/vdb"
 data_volume_mount_path: "/data"
 data_volume_filesystem: "ext4"
+docker_data_root: "/data/docker"
+k3s_data_dir: "/data/k3s"
+k3s_local_storage_path: "/data/local-path-provisioner"
+build_cache_root: "/data/tmp"
 
 # Optional Argo CD placeholders.
 argocd_namespace: "argocd"

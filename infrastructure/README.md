@@ -114,6 +114,14 @@ Edit `config/deploy.env` and set at minimum:
 - `MINIO_ROOT_USER` if you do not want the default
 - any secrets you do not want auto-generated
 
+By default, the deployment keeps the root disk for Ubuntu, packages, logs, and
+normal system files, and uses the attached block volume for heavy runtime data:
+
+- Docker data root: `/data/docker`
+- K3s/containerd data: `/data/k3s`
+- Kubernetes local-path PVC storage: `/data/local-path-provisioner`
+- temporary build/cache files: `/data/tmp`
+
 Then run from the repository root:
 
 ```bash
@@ -175,6 +183,10 @@ Required GitHub secrets and variables:
 - Variable: `DATA_VOLUME_DEVICE`
 - Variable: `DATA_VOLUME_MOUNT_PATH`
 - Variable: `DATA_VOLUME_FILESYSTEM`
+- Variable: `DOCKER_DATA_ROOT`
+- Variable: `K3S_DATA_DIR`
+- Variable: `K3S_LOCAL_STORAGE_PATH`
+- Variable: `BUILD_CACHE_ROOT`
 
 Optional variables:
 

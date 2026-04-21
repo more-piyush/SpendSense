@@ -51,9 +51,14 @@ fi
 export DATA_VOLUME_DEVICE="${DATA_VOLUME_DEVICE:-/dev/vdb}"
 export DATA_VOLUME_MOUNT_PATH="${DATA_VOLUME_MOUNT_PATH:-/data}"
 export DATA_VOLUME_FILESYSTEM="${DATA_VOLUME_FILESYSTEM:-ext4}"
+export DOCKER_DATA_ROOT="${DOCKER_DATA_ROOT:-/data/docker}"
+export K3S_DATA_DIR="${K3S_DATA_DIR:-/data/k3s}"
+export K3S_LOCAL_STORAGE_PATH="${K3S_LOCAL_STORAGE_PATH:-/data/local-path-provisioner}"
+export BUILD_CACHE_ROOT="${BUILD_CACHE_ROOT:-/data/tmp}"
 export K3S_INSTALL_CHANNEL="${K3S_INSTALL_CHANNEL:-stable}"
 export K3S_SERVER_EXTRA_ARGS="${K3S_SERVER_EXTRA_ARGS:---write-kubeconfig-mode 644 --disable traefik}"
 export INSTALL_TERRAFORM="${INSTALL_TERRAFORM:-true}"
+export TMPDIR="${BUILD_CACHE_ROOT}"
 
 phase "Phase 1/9 - OS packages and Ansible"
 run sudo apt-get update
@@ -80,6 +85,7 @@ export KUBECONFIG="${DEPLOY_HOME}/.kube/config"
 run kubectl get nodes
 
 phase "Phase 3/9 - Build and import runtime images"
+run mkdir -p "${BUILD_CACHE_ROOT}"
 images=(
   "firefly-data:latest|Data/pipelines/Dockerfile|Data/pipelines"
   "spendsense/training:latest|Training/training_scripts/Dockerfile|Training/training_scripts"
