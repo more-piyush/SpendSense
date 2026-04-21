@@ -27,4 +27,4 @@ COPY --from=assets /src/public/v1 /var/www/html/public/v1
 COPY --from=assets /src/public/mix-manifest.json /var/www/html/public/mix-manifest.json
 
 RUN mkdir -p storage/framework/sessions storage/framework/cache storage/framework/views bootstrap/cache \
-    && chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache
+    && chmod -R u+rwX,g+rwX /var/www/html/storage /var/www/html/bootstrap/cache || true
