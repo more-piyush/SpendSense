@@ -69,13 +69,19 @@ def step_2_validate(prod_df: pd.DataFrame) -> pd.DataFrame:
         except ValidationError as e:
             rejected += 1
             if rejected <= 5:
-                log.warning("  reject: %s", e.errors()[0]["msg"])
+                err = e.errors()[0]
+                log.warning("  reject: %s → %s", err.get("loc"), err.get("msg"))
 
     df = pd.DataFrame(valid)
-    reject_rate = rejected / max(len(prod_df), 1)
+    total = len(prod_df)
+    reject_rate = rejected / max(total, 1)
     log.info("  valid: %d | rejected: %d (%.1f%%)",
              len(df), rejected, reject_rate * 100)
-    if reject_rate > config.MAX_SCHEMA_REJECT_RATE:
+
+    if total < config.MIN_REJECT_CHECK_SAMPLE:
+        log.info("  sample %d < %d — skipping reject-rate gate (bootstrap)",
+                 total, config.MIN_REJECT_CHECK_SAMPLE)
+    elif reject_rate > config.MAX_SCHEMA_REJECT_RATE:
         fail(f"Schema reject rate {reject_rate:.1%} exceeds limit")
 
     if not df.empty:

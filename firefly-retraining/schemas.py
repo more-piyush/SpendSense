@@ -19,6 +19,11 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 import config
 
 
+# `model_*` fields trigger a protected-namespace warning in pydantic v2.
+# Our serving team already logs these names — opt out of the namespace check.
+_ALLOW_MODEL_PREFIX = ConfigDict(protected_namespaces=())
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Categorization feedback event (confirmed against real log sample)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -61,7 +66,7 @@ class CategorizationFeedback(BaseModel):
     model_config = ConfigDict(protected_namespaces=())
     task: Literal["categorization"]
     transaction_id: str = Field(..., min_length=1)
-    user_id: str = Field(..., min_length=1)
+    user_id: Optional[str] = None                       # can be null if unlinked
     model_family: str = Field(..., min_length=1)
     model_version: str = Field(..., pattern=r"^\d+\.\d+\.\d+$")
     action: Literal[
@@ -118,8 +123,10 @@ class TrendFinalValue(BaseModel):
 
 
 class TrendFeedback(BaseModel):
+    model_config = _ALLOW_MODEL_PREFIX
+
     task: Literal["trend_detection"]
-    user_id: str = Field(..., min_length=1)
+    user_id: Optional[str] = None
     category: str = Field(..., min_length=1)
     period: str = Field(..., pattern=r"^\d{4}-\d{2}$")
     model_family: str = Field(..., min_length=1)
@@ -130,6 +137,11 @@ class TrendFeedback(BaseModel):
     final_value: Optional[TrendFinalValue] = None
     metadata: dict = Field(default_factory=dict)
     timestamp: datetime
+
+    @field_validator("user_id", mode="before")
+    @classmethod
+    def user_id_to_str(cls, v):
+        return None if v is None else str(v)
 
     @field_validator("features")
     @classmethod
