@@ -44,6 +44,15 @@ final class CategoryController extends Controller
     private CategoryRepositoryInterface $repository;
     protected array $acceptedRoles = [UserRoleEnum::READ_ONLY];
 
+    private function normalizeOptionalString(mixed $value): string
+    {
+        if (!is_string($value)) {
+            return '';
+        }
+
+        return trim($value);
+    }
+
     private function servingClient(string $servingUrl): Client
     {
         return new Client([
@@ -68,8 +77,8 @@ final class CategoryController extends Controller
             'transaction_id' => (string) Str::uuid(),
             'description'    => $description,
             'amount'         => (float) $amount,
-            'currency'       => $request->query('currency'),
-            'country'        => $request->query('country'),
+            'currency'       => $this->normalizeOptionalString($request->query('currency')),
+            'country'        => $this->normalizeOptionalString($request->query('country')),
             'user_id'        => null !== $request->user() ? (string) $request->user()->id : null,
         ];
 

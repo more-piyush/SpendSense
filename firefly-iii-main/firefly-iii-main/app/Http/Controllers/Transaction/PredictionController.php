@@ -14,6 +14,15 @@ use Illuminate\Support\Str;
 
 final class PredictionController extends Controller
 {
+    private function normalizeOptionalString(mixed $value): string
+    {
+        if (!is_string($value)) {
+            return '';
+        }
+
+        return trim($value);
+    }
+
     private function servingClient(string $servingUrl): Client
     {
         return new Client([
@@ -46,8 +55,8 @@ final class PredictionController extends Controller
             'transaction_id' => (string) Str::uuid(),
             'description'    => $validated['description'],
             'amount'         => (float) ($validated['amount'] ?? 0.0),
-            'currency'       => $validated['currency'] ?? null,
-            'country'        => $validated['country'] ?? null,
+            'currency'       => $this->normalizeOptionalString($validated['currency'] ?? ''),
+            'country'        => $this->normalizeOptionalString($validated['country'] ?? ''),
             'user_id'        => null !== $request->user() ? (string) $request->user()->id : null,
         ];
 
