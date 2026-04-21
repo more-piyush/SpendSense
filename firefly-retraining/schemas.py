@@ -12,9 +12,9 @@ envelope we have a real sample of. Tighten once a real feedback/trend sample
 is available.
 """
 from datetime import datetime
-from typing import List, Literal, Optional
+from typing import Any, List, Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 import config
 
@@ -23,24 +23,42 @@ import config
 # Categorization feedback event (confirmed against real log sample)
 # ─────────────────────────────────────────────────────────────────────────────
 class CategorizationPredictedValue(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
     category: str = Field(..., min_length=1)
     confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
 
 
 class CategorizationFinalValue(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
     category: str = Field(..., min_length=1)
 
 
 class CategorizationMetadata(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
     source: Optional[str] = None
     description: str = Field(..., min_length=1)
-    amount: str                                         # logged as string
+    amount: str                                         # logged as string/number, coerced below
     currency: str = Field(..., pattern=r"^[A-Z]{3}$")
     country: Optional[str] = None                       # absent in current logs
     feedback_origin: Optional[str] = None
 
+    @field_validator("amount", mode="before")
+    @classmethod
+    def coerce_amount(cls, value: Any) -> str:
+        if value is None:
+            raise ValueError("amount is required")
+        return str(value)
+
+    @field_validator("country", mode="before")
+    @classmethod
+    def coerce_country(cls, value: Any) -> Optional[str]:
+        if value is None:
+            return None
+        return str(value)
+
 
 class CategorizationFeedback(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
     task: Literal["categorization"]
     transaction_id: str = Field(..., min_length=1)
     user_id: str = Field(..., min_length=1)
@@ -54,6 +72,16 @@ class CategorizationFeedback(BaseModel):
     final_value: Optional[CategorizationFinalValue] = None
     metadata: CategorizationMetadata
     timestamp: datetime
+
+    @field_validator("transaction_id", "user_id", "model_family", "model_version", mode="before")
+    @classmethod
+    def coerce_required_strings(cls, value: Any) -> str:
+        if value is None:
+            raise ValueError("required string field is null")
+        value = str(value)
+        if value == "":
+            raise ValueError("required string field is empty")
+        return value
 
     @model_validator(mode="after")
     def check_final_value(self):
