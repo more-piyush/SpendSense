@@ -273,7 +273,7 @@ jobs:
           ANSIBLE_SSH_USER: ${{ vars.ANSIBLE_SSH_USER }}
         run: |
           ssh -i "${HOME}/.ssh/id_ed25519" "${ANSIBLE_SSH_USER}@${CONTROL_PLANE_IP}" \
-            "cd ${REMOTE_REPO_PATH} && bash infrastructure/scripts/deploy-remote-stack.sh prerequisites"
+            "cd ${REMOTE_REPO_PATH} && FLOATING_IP='${CONTROL_PLANE_IP}' bash infrastructure/scripts/deploy-remote-stack.sh prerequisites"
 
       - name: Remote Kubernetes access check
         env:
@@ -281,7 +281,7 @@ jobs:
           ANSIBLE_SSH_USER: ${{ vars.ANSIBLE_SSH_USER }}
         run: |
           ssh -i "${HOME}/.ssh/id_ed25519" "${ANSIBLE_SSH_USER}@${CONTROL_PLANE_IP}" \
-            "cd ${REMOTE_REPO_PATH} && bash infrastructure/scripts/deploy-remote-stack.sh kubernetes-access"
+            "cd ${REMOTE_REPO_PATH} && FLOATING_IP='${CONTROL_PLANE_IP}' bash infrastructure/scripts/deploy-remote-stack.sh kubernetes-access"
 
       - name: Remote image build and import
         env:
@@ -289,7 +289,7 @@ jobs:
           ANSIBLE_SSH_USER: ${{ vars.ANSIBLE_SSH_USER }}
         run: |
           ssh -i "${HOME}/.ssh/id_ed25519" "${ANSIBLE_SSH_USER}@${CONTROL_PLANE_IP}" \
-            "cd ${REMOTE_REPO_PATH} && bash infrastructure/scripts/deploy-remote-stack.sh build-images"
+            "cd ${REMOTE_REPO_PATH} && FLOATING_IP='${CONTROL_PLANE_IP}' bash infrastructure/scripts/deploy-remote-stack.sh build-images"
 
       - name: Remote core platform and serving deployment
         env:
@@ -297,7 +297,7 @@ jobs:
           ANSIBLE_SSH_USER: ${{ vars.ANSIBLE_SSH_USER }}
         run: |
           ssh -i "${HOME}/.ssh/id_ed25519" "${ANSIBLE_SSH_USER}@${CONTROL_PLANE_IP}" \
-            "cd ${REMOTE_REPO_PATH} && bash infrastructure/scripts/deploy-remote-stack.sh deploy-core"
+            "cd ${REMOTE_REPO_PATH} && FLOATING_IP='${CONTROL_PLANE_IP}' bash infrastructure/scripts/deploy-remote-stack.sh deploy-core"
 
       - name: Remote data bootstrap
         env:
@@ -305,7 +305,7 @@ jobs:
           ANSIBLE_SSH_USER: ${{ vars.ANSIBLE_SSH_USER }}
         run: |
           ssh -i "${HOME}/.ssh/id_ed25519" "${ANSIBLE_SSH_USER}@${CONTROL_PLANE_IP}" \
-            "cd ${REMOTE_REPO_PATH} && bash infrastructure/scripts/deploy-remote-stack.sh seed-data"
+            "cd ${REMOTE_REPO_PATH} && FLOATING_IP='${CONTROL_PLANE_IP}' bash infrastructure/scripts/deploy-remote-stack.sh seed-data"
 
       - name: Remote model training
         env:
@@ -313,7 +313,7 @@ jobs:
           ANSIBLE_SSH_USER: ${{ vars.ANSIBLE_SSH_USER }}
         run: |
           ssh -i "${HOME}/.ssh/id_ed25519" "${ANSIBLE_SSH_USER}@${CONTROL_PLANE_IP}" \
-            "cd ${REMOTE_REPO_PATH} && bash infrastructure/scripts/deploy-remote-stack.sh train-models"
+            "cd ${REMOTE_REPO_PATH} && FLOATING_IP='${CONTROL_PLANE_IP}' bash infrastructure/scripts/deploy-remote-stack.sh train-models"
 
       - name: Remote monitoring deployment
         if: ${{ github.event.inputs.deploy_monitoring == 'true' }}
@@ -322,7 +322,7 @@ jobs:
           ANSIBLE_SSH_USER: ${{ vars.ANSIBLE_SSH_USER }}
         run: |
           ssh -i "${HOME}/.ssh/id_ed25519" "${ANSIBLE_SSH_USER}@${CONTROL_PLANE_IP}" \
-            "cd ${REMOTE_REPO_PATH} && bash infrastructure/scripts/deploy-remote-stack.sh monitoring"
+            "cd ${REMOTE_REPO_PATH} && FLOATING_IP='${CONTROL_PLANE_IP}' bash infrastructure/scripts/deploy-remote-stack.sh monitoring"
 
       - name: Remote deployment verification
         env:
@@ -330,4 +330,4 @@ jobs:
           ANSIBLE_SSH_USER: ${{ vars.ANSIBLE_SSH_USER }}
         run: |
           ssh -i "${HOME}/.ssh/id_ed25519" "${ANSIBLE_SSH_USER}@${CONTROL_PLANE_IP}" \
-            "cd ${REMOTE_REPO_PATH} && bash infrastructure/scripts/deploy-remote-stack.sh validate"
+            "cd ${REMOTE_REPO_PATH} && FLOATING_IP='${CONTROL_PLANE_IP}' bash infrastructure/scripts/deploy-remote-stack.sh validate"
