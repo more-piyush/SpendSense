@@ -267,10 +267,67 @@ jobs:
             -e "ssh -i ${HOME}/.ssh/id_ed25519" \
             ./ "${ANSIBLE_SSH_USER}@${CONTROL_PLANE_IP}:${REMOTE_REPO_PATH}/"
 
-      - name: Run full remote platform deployment
+      - name: Remote prerequisites
         env:
           CONTROL_PLANE_IP: ${{ steps.tf.outputs.control_plane_ip }}
           ANSIBLE_SSH_USER: ${{ vars.ANSIBLE_SSH_USER }}
         run: |
           ssh -i "${HOME}/.ssh/id_ed25519" "${ANSIBLE_SSH_USER}@${CONTROL_PLANE_IP}" \
-            "cd ${REMOTE_REPO_PATH} && bash infrastructure/scripts/deploy-remote-stack.sh"
+            "cd ${REMOTE_REPO_PATH} && bash infrastructure/scripts/deploy-remote-stack.sh prerequisites"
+
+      - name: Remote Kubernetes access check
+        env:
+          CONTROL_PLANE_IP: ${{ steps.tf.outputs.control_plane_ip }}
+          ANSIBLE_SSH_USER: ${{ vars.ANSIBLE_SSH_USER }}
+        run: |
+          ssh -i "${HOME}/.ssh/id_ed25519" "${ANSIBLE_SSH_USER}@${CONTROL_PLANE_IP}" \
+            "cd ${REMOTE_REPO_PATH} && bash infrastructure/scripts/deploy-remote-stack.sh kubernetes-access"
+
+      - name: Remote image build and import
+        env:
+          CONTROL_PLANE_IP: ${{ steps.tf.outputs.control_plane_ip }}
+          ANSIBLE_SSH_USER: ${{ vars.ANSIBLE_SSH_USER }}
+        run: |
+          ssh -i "${HOME}/.ssh/id_ed25519" "${ANSIBLE_SSH_USER}@${CONTROL_PLANE_IP}" \
+            "cd ${REMOTE_REPO_PATH} && bash infrastructure/scripts/deploy-remote-stack.sh build-images"
+
+      - name: Remote core platform and serving deployment
+        env:
+          CONTROL_PLANE_IP: ${{ steps.tf.outputs.control_plane_ip }}
+          ANSIBLE_SSH_USER: ${{ vars.ANSIBLE_SSH_USER }}
+        run: |
+          ssh -i "${HOME}/.ssh/id_ed25519" "${ANSIBLE_SSH_USER}@${CONTROL_PLANE_IP}" \
+            "cd ${REMOTE_REPO_PATH} && bash infrastructure/scripts/deploy-remote-stack.sh deploy-core"
+
+      - name: Remote data bootstrap
+        env:
+          CONTROL_PLANE_IP: ${{ steps.tf.outputs.control_plane_ip }}
+          ANSIBLE_SSH_USER: ${{ vars.ANSIBLE_SSH_USER }}
+        run: |
+          ssh -i "${HOME}/.ssh/id_ed25519" "${ANSIBLE_SSH_USER}@${CONTROL_PLANE_IP}" \
+            "cd ${REMOTE_REPO_PATH} && bash infrastructure/scripts/deploy-remote-stack.sh seed-data"
+
+      - name: Remote model training
+        env:
+          CONTROL_PLANE_IP: ${{ steps.tf.outputs.control_plane_ip }}
+          ANSIBLE_SSH_USER: ${{ vars.ANSIBLE_SSH_USER }}
+        run: |
+          ssh -i "${HOME}/.ssh/id_ed25519" "${ANSIBLE_SSH_USER}@${CONTROL_PLANE_IP}" \
+            "cd ${REMOTE_REPO_PATH} && bash infrastructure/scripts/deploy-remote-stack.sh train-models"
+
+      - name: Remote monitoring deployment
+        if: ${{ github.event.inputs.deploy_monitoring == 'true' }}
+        env:
+          CONTROL_PLANE_IP: ${{ steps.tf.outputs.control_plane_ip }}
+          ANSIBLE_SSH_USER: ${{ vars.ANSIBLE_SSH_USER }}
+        run: |
+          ssh -i "${HOME}/.ssh/id_ed25519" "${ANSIBLE_SSH_USER}@${CONTROL_PLANE_IP}" \
+            "cd ${REMOTE_REPO_PATH} && bash infrastructure/scripts/deploy-remote-stack.sh monitoring"
+
+      - name: Remote deployment verification
+        env:
+          CONTROL_PLANE_IP: ${{ steps.tf.outputs.control_plane_ip }}
+          ANSIBLE_SSH_USER: ${{ vars.ANSIBLE_SSH_USER }}
+        run: |
+          ssh -i "${HOME}/.ssh/id_ed25519" "${ANSIBLE_SSH_USER}@${CONTROL_PLANE_IP}" \
+            "cd ${REMOTE_REPO_PATH} && bash infrastructure/scripts/deploy-remote-stack.sh validate"
