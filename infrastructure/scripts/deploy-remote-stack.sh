@@ -18,6 +18,13 @@ run() {
   "$@"
 }
 
+require_cmd() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    printf '[ERROR] Required command not found: %s\n' "$1" >&2
+    exit 1
+  fi
+}
+
 cleanup_on_error() {
   printf '\n[ERROR] Remote deployment failed. See %s for details.\n' "${LOG_FILE}" >&2
 }
@@ -35,22 +42,16 @@ if [[ ! -f "${KUBECONFIG}" && -f /etc/rancher/k3s/k3s.yaml ]]; then
   chmod 600 "${KUBECONFIG}"
 fi
 
-phase "Phase 1/7 - Control-plane tools"
-run sudo apt-get update
-run sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-  docker.io \
-  curl \
-  jq \
-  rsync \
-  unzip
+phase "Phase 1/7 - Control-plane prerequisites"
+require_cmd docker
+require_cmd jq
+require_cmd rsync
+require_cmd unzip
+require_cmd helm
 run sudo systemctl enable --now docker
 run sudo mkdir -p "${BUILD_CACHE_ROOT}"
 run sudo chown "$(id -u):$(id -g)" "${BUILD_CACHE_ROOT}"
 run sudo chmod 1777 "${BUILD_CACHE_ROOT}"
-
-if ! command -v helm >/dev/null 2>&1; then
-  run bash -lc "curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash"
-fi
 
 phase "Phase 2/7 - Kubernetes access"
 run kubectl get nodes

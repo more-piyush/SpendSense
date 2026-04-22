@@ -10,6 +10,7 @@
     data_volume_device: "{{ lookup('env', 'DATA_VOLUME_DEVICE') | default('/dev/vdb', true) }}"
     data_volume_mount_path: "{{ lookup('env', 'DATA_VOLUME_MOUNT_PATH') | default('/data', true) }}"
     data_volume_filesystem: "{{ lookup('env', 'DATA_VOLUME_FILESYSTEM') | default('ext4', true) }}"
+    containerd_data_root: "{{ lookup('env', 'CONTAINERD_DATA_ROOT') | default('/data/containerd', true) }}"
     docker_data_root: "{{ lookup('env', 'DOCKER_DATA_ROOT') | default('/data/docker', true) }}"
     k3s_data_dir: "{{ lookup('env', 'K3S_DATA_DIR') | default('/data/k3s', true) }}"
     k3s_local_storage_path: "{{ lookup('env', 'K3S_LOCAL_STORAGE_PATH') | default('/data/local-path-provisioner', true) }}"
@@ -18,6 +19,10 @@
     k3s_server_extra_args: "{{ lookup('env', 'K3S_SERVER_EXTRA_ARGS') | default('--write-kubeconfig-mode 644 --disable traefik', true) }}"
     install_terraform: "{{ lookup('env', 'INSTALL_TERRAFORM') | default('true', true) | bool }}"
   handlers:
+    - name: Restart containerd
+      ansible.builtin.service:
+        name: containerd
+        state: restarted
     - name: Restart Docker
       ansible.builtin.service:
         name: docker
@@ -119,6 +124,14 @@
         group: root
         mode: "0755"
 
+    - name: Ensure containerd data root exists on attached volume
+      ansible.builtin.file:
+        path: "{{ containerd_data_root }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
     - name: Ensure K3s data directories exist on attached volume
       ansible.builtin.file:
         path: "{{ item }}"
@@ -145,6 +158,12 @@
         name:
           - docker.io
 
+    - name: Ensure containerd service is enabled and running
+      ansible.builtin.service:
+        name: containerd
+        state: started
+        enabled: true
+
     - name: Configure Docker data-root on attached volume
       ansible.builtin.copy:
         dest: /etc/docker/daemon.json
@@ -159,6 +178,21 @@
             }
           }
       notify: Restart Docker
+
+    - name: Configure containerd root on attached volume
+      ansible.builtin.copy:
+        dest: /etc/containerd/config.toml
+        mode: "0644"
+        content: |
+          version = 2
+          root = "{{ containerd_data_root }}"
+          state = "/run/containerd"
+
+          [grpc]
+            address = "/run/containerd/containerd.sock"
+      notify:
+        - Restart containerd
+        - Restart Docker
 
     - name: Start and enable Docker
       ansible.builtin.service:

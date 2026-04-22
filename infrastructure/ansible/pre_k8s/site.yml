@@ -5,11 +5,16 @@
   vars_files:
     - ../group_vars/all.yml
   vars:
+    effective_containerd_data_root: "{{ containerd_data_root | default('/data/containerd') }}"
     effective_docker_data_root: "{{ docker_data_root | default('/data/docker') }}"
     effective_k3s_data_dir: "{{ k3s_data_dir | default('/data/k3s') }}"
     effective_k3s_local_storage_path: "{{ k3s_local_storage_path | default('/data/local-path-provisioner') }}"
     effective_build_cache_root: "{{ build_cache_root | default('/data/tmp') }}"
   handlers:
+    - name: Restart containerd
+      ansible.builtin.service:
+        name: containerd
+        state: restarted
     - name: Restart Docker
       ansible.builtin.service:
         name: docker
@@ -25,12 +30,20 @@
           - gnupg
           - jq
           - nfs-common
+          - rsync
+          - unzip
         state: present
         update_cache: true
 
     - name: Ensure Docker service is enabled and running
       ansible.builtin.service:
         name: docker
+        state: started
+        enabled: true
+
+    - name: Ensure containerd service is enabled and running
+      ansible.builtin.service:
+        name: containerd
         state: started
         enabled: true
 
@@ -122,6 +135,15 @@
         mode: "0755"
       when: inventory_hostname in groups['control_plane']
 
+    - name: Ensure containerd data root exists on control plane
+      ansible.builtin.file:
+        path: "{{ effective_containerd_data_root }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      when: inventory_hostname in groups['control_plane']
+
     - name: Ensure K3s data directories exist on control plane
       ansible.builtin.file:
         path: "{{ item }}"
@@ -159,5 +181,27 @@
       when: inventory_hostname in groups['control_plane']
       notify: Restart Docker
 
+    - name: Configure containerd root on control plane
+      ansible.builtin.copy:
+        dest: /etc/containerd/config.toml
+        mode: "0644"
+        content: |
+          version = 2
+          root = "{{ effective_containerd_data_root }}"
+          state = "/run/containerd"
+
+          [grpc]
+            address = "/run/containerd/containerd.sock"
+      when: inventory_hostname in groups['control_plane']
+      notify:
+        - Restart containerd
+        - Restart Docker
+
     - name: Flush Docker restart if configuration changed
       ansible.builtin.meta: flush_handlers
+
+    - name: Install Helm on control plane
+      ansible.builtin.shell: curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+      args:
+        creates: /usr/local/bin/helm
+      when: inventory_hostname in groups['control_plane']
