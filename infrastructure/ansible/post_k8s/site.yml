@@ -33,7 +33,8 @@
         timeout: 240
 
     - name: Wait for Kubernetes API to become reachable
-      ansible.builtin.command: "{{ kubectl_cmd + ['get', 'nodes'] }}"
+      ansible.builtin.command:
+        argv: "{{ kubectl_cmd + ['get', 'nodes'] }}"
       environment:
         KUBECONFIG: "{{ k3s_kubeconfig_path }}"
       register: kubectl_ready
@@ -62,7 +63,8 @@
         mode: preserve
 
     - name: Create platform namespace
-      ansible.builtin.command: "{{ kubectl_cmd + ['apply', '-f', k8s_manifest_dest + '/namespace/namespace.yaml'] }}"
+      ansible.builtin.command:
+        argv: "{{ kubectl_cmd + ['apply', '-f', k8s_manifest_dest + '/namespace/namespace.yaml'] }}"
       environment:
         KUBECONFIG: "{{ k3s_kubeconfig_path }}"
       register: namespace_apply
@@ -72,7 +74,8 @@
       changed_when: false
 
     - name: Apply storage manifests
-      ansible.builtin.command: "{{ kubectl_cmd + ['apply', '-f', item] }}"
+      ansible.builtin.command:
+        argv: "{{ kubectl_cmd + ['apply', '-f', item] }}"
       environment:
         KUBECONFIG: "{{ k3s_kubeconfig_path }}"
       register: storage_apply
