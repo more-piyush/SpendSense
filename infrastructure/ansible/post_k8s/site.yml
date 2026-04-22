@@ -8,6 +8,7 @@
   vars:
     k8s_manifest_src: "{{ playbook_dir }}/../../k8s"
     k8s_manifest_dest: /opt/spendsense/k8s
+    kubeconfig_tmp_path: "/tmp/spendsense-kubeconfig"
   tasks:
     - name: Ensure kubectl shim exists
       ansible.builtin.file:
@@ -43,18 +44,20 @@
     - name: Fetch kubeconfig to local machine
       ansible.builtin.fetch:
         src: /etc/rancher/k3s/k3s.yaml
-        dest: /tmp/spendsense-kubeconfig
+        dest: "{{ kubeconfig_tmp_path }}"
         flat: true
 
     - name: Rewrite kubeconfig server endpoint locally
       delegate_to: localhost
+      become: false
       ansible.builtin.replace:
-        path: /tmp/spendsense-kubeconfig
+        path: "{{ kubeconfig_tmp_path }}"
         regexp: 'https://127\.0\.0\.1:6443'
         replace: "https://{{ ansible_host }}:6443"
 
     - name: Ensure local kubeconfig directory exists
       delegate_to: localhost
+      become: false
       ansible.builtin.file:
         path: "{{ kubeconfig_local_path | dirname }}"
         state: directory
@@ -62,7 +65,9 @@
 
     - name: Install kubeconfig locally
       delegate_to: localhost
+      become: false
       ansible.builtin.copy:
-        src: /tmp/spendsense-kubeconfig
+        src: "{{ kubeconfig_tmp_path }}"
         dest: "{{ kubeconfig_local_path }}"
         mode: "0600"
+        remote_src: true
