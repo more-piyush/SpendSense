@@ -4,6 +4,11 @@
   become: true
   vars_files:
     - ../group_vars/all.yml
+  vars:
+    effective_docker_data_root: "{{ docker_data_root | default('/data/docker') }}"
+    effective_k3s_data_dir: "{{ k3s_data_dir | default('/data/k3s') }}"
+    effective_k3s_local_storage_path: "{{ k3s_local_storage_path | default('/data/local-path-provisioner') }}"
+    effective_build_cache_root: "{{ build_cache_root | default('/data/tmp') }}"
   handlers:
     - name: Restart Docker
       ansible.builtin.service:
@@ -114,10 +119,10 @@
         state: directory
         mode: "0755"
       loop:
-        - "{{ docker_data_root }}"
-        - "{{ k3s_data_dir }}"
-        - "{{ k3s_local_storage_path }}"
-        - "{{ build_cache_root }}"
+        - "{{ effective_docker_data_root }}"
+        - "{{ effective_k3s_data_dir }}"
+        - "{{ effective_k3s_local_storage_path }}"
+        - "{{ effective_build_cache_root }}"
       when: inventory_hostname in groups['control_plane']
 
     - name: Configure Docker data-root on control plane
@@ -126,7 +131,7 @@
         mode: "0644"
         content: |
           {
-            "data-root": "{{ docker_data_root }}",
+            "data-root": "{{ effective_docker_data_root }}",
             "log-driver": "json-file",
             "log-opts": {
               "max-size": "10m",

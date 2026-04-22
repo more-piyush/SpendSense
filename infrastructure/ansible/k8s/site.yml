@@ -5,13 +5,15 @@
   vars_files:
     - ../group_vars/all.yml
   vars:
+    effective_k3s_data_dir: "{{ k3s_data_dir | default('/data/k3s') }}"
+    effective_k3s_local_storage_path: "{{ k3s_local_storage_path | default('/data/local-path-provisioner') }}"
     install_k3s_server_cmd: >
       curl -sfL https://get.k3s.io |
       INSTALL_K3S_CHANNEL={{ k3s_install_channel }}
       K3S_TOKEN={{ k3s_token }}
       sh -s - server
-      --data-dir {{ k3s_data_dir }}
-      --default-local-storage-path {{ k3s_local_storage_path }}
+      --data-dir {{ effective_k3s_data_dir }}
+      --default-local-storage-path {{ effective_k3s_local_storage_path }}
       {{ k3s_server_extra_args }}
   tasks:
     - name: Install K3s server
@@ -21,7 +23,7 @@
 
     - name: Wait for node-token to exist
       ansible.builtin.wait_for:
-        path: "{{ k3s_data_dir }}/server/node-token"
+        path: "{{ effective_k3s_data_dir }}/server/node-token"
         timeout: 120
 
 - name: Join worker nodes to K3s cluster
