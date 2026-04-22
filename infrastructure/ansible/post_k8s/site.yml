@@ -9,6 +9,10 @@
     k8s_manifest_src: "{{ playbook_dir }}/../../k8s"
     k8s_manifest_dest: /opt/spendsense/k8s
     kubeconfig_tmp_path: "/tmp/spendsense-kubeconfig"
+    k3s_kubeconfig_path: "/etc/rancher/k3s/k3s.yaml"
+    kubectl_cmd:
+      - /usr/local/bin/k3s
+      - kubectl
   tasks:
     - name: Ensure K3s service is enabled and running
       ansible.builtin.service:
@@ -18,11 +22,20 @@
 
     - name: Wait for K3s kubeconfig on control plane
       ansible.builtin.wait_for:
-        path: /etc/rancher/k3s/k3s.yaml
+        path: "{{ k3s_kubeconfig_path }}"
         timeout: 180
 
+    - name: Wait for Kubernetes API port on control plane
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: 6443
+        delay: 5
+        timeout: 240
+
     - name: Wait for Kubernetes API to become reachable
-      ansible.builtin.command: kubectl get nodes
+      ansible.builtin.command: "{{ kubectl_cmd + ['get', 'nodes'] }}"
+      environment:
+        KUBECONFIG: "{{ k3s_kubeconfig_path }}"
       register: kubectl_ready
       retries: 24
       delay: 10
@@ -49,11 +62,23 @@
         mode: preserve
 
     - name: Create platform namespace
-      ansible.builtin.command: kubectl apply -f {{ k8s_manifest_dest }}/namespace/namespace.yaml
+      ansible.builtin.command: "{{ kubectl_cmd + ['apply', '-f', k8s_manifest_dest + '/namespace/namespace.yaml'] }}"
+      environment:
+        KUBECONFIG: "{{ k3s_kubeconfig_path }}"
+      register: namespace_apply
+      retries: 12
+      delay: 10
+      until: namespace_apply.rc == 0
       changed_when: false
 
     - name: Apply storage manifests
-      ansible.builtin.command: kubectl apply -f {{ item }}
+      ansible.builtin.command: "{{ kubectl_cmd + ['apply', '-f', item] }}"
+      environment:
+        KUBECONFIG: "{{ k3s_kubeconfig_path }}"
+      register: storage_apply
+      retries: 12
+      delay: 10
+      until: storage_apply.rc == 0
       loop:
         - "{{ k8s_manifest_dest }}/storage/pvc-postgres.yaml"
         - "{{ k8s_manifest_dest }}/storage/pvc-minio.yaml"
@@ -62,7 +87,7 @@
 
     - name: Fetch kubeconfig to local machine
       ansible.builtin.fetch:
-        src: /etc/rancher/k3s/k3s.yaml
+        src: "{{ k3s_kubeconfig_path }}"
         dest: "{{ kubeconfig_tmp_path }}"
         flat: true
 
