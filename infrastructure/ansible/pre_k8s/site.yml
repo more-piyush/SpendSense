@@ -5,11 +5,11 @@
   vars_files:
     - ../group_vars/all.yml
   vars:
-    effective_containerd_data_root: "{{ containerd_data_root | default('/data/containerd') }}"
-    effective_docker_data_root: "{{ docker_data_root | default('/data/docker') }}"
-    effective_k3s_data_dir: "{{ k3s_data_dir | default('/data/k3s') }}"
-    effective_k3s_local_storage_path: "{{ k3s_local_storage_path | default('/data/local-path-provisioner') }}"
-    effective_build_cache_root: "{{ build_cache_root | default('/data/tmp') }}"
+    effective_containerd_data_root: "{{ containerd_data_root | default('/data/containerd', true) }}"
+    effective_docker_data_root: "{{ docker_data_root | default('/data/docker', true) }}"
+    effective_k3s_data_dir: "{{ k3s_data_dir | default('/data/k3s', true) }}"
+    effective_k3s_local_storage_path: "{{ k3s_local_storage_path | default('/data/local-path-provisioner', true) }}"
+    effective_build_cache_root: "{{ build_cache_root | default('/data/tmp', true) }}"
   handlers:
     - name: Restart containerd
       ansible.builtin.service:
