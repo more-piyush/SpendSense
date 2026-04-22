@@ -20,18 +20,6 @@ resource "openstack_networking_secgroup_rule_v2" "public_tcp_ingress" {
   security_group_id = openstack_networking_secgroup_v2.public_services.id
 }
 
-resource "openstack_networking_secgroup_rule_v2" "public_egress_ipv4" {
-  direction         = "egress"
-  ethertype         = "IPv4"
-  security_group_id = openstack_networking_secgroup_v2.public_services.id
-}
-
-resource "openstack_networking_secgroup_rule_v2" "public_egress_ipv6" {
-  direction         = "egress"
-  ethertype         = "IPv6"
-  security_group_id = openstack_networking_secgroup_v2.public_services.id
-}
-
 resource "openstack_networking_network_v2" "private_net" {
   name                  = "private-net-mlops-${var.suffix}"
   port_security_enabled = false
