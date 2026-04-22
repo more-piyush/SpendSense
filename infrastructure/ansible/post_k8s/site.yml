@@ -62,6 +62,7 @@
         path: "{{ kubeconfig_local_path | dirname }}"
         state: directory
         mode: "0700"
+      when: (kubeconfig_local_path | dirname) != "/tmp"
 
     - name: Install kubeconfig locally
       delegate_to: localhost
