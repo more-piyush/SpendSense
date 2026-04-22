@@ -2,6 +2,8 @@
 - name: Prepare Chameleon nodes for Kubernetes
   hosts: k8s_cluster
   become: true
+  vars_files:
+    - ../group_vars/all.yml
   handlers:
     - name: Restart Docker
       ansible.builtin.service:

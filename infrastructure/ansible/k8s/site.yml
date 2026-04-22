@@ -2,6 +2,8 @@
 - name: Install K3s control plane
   hosts: control_plane
   become: true
+  vars_files:
+    - ../group_vars/all.yml
   vars:
     install_k3s_server_cmd: >
       curl -sfL https://get.k3s.io |
@@ -25,6 +27,8 @@
 - name: Join worker nodes to K3s cluster
   hosts: workers
   become: true
+  vars_files:
+    - ../group_vars/all.yml
   vars:
     server_host: "{{ hostvars[groups['control_plane'][0]].ansible_host }}"
     install_k3s_agent_cmd: >

@@ -3,6 +3,8 @@
   hosts: control_plane
   become: true
   run_once: true
+  vars_files:
+    - ../group_vars/all.yml
   vars:
     k8s_manifest_src: "{{ playbook_dir }}/../../k8s"
     k8s_manifest_dest: /opt/spendsense/k8s

@@ -3,6 +3,8 @@
   hosts: control_plane
   become: true
   run_once: true
+  vars_files:
+    - ../group_vars/all.yml
   vars:
     argocd_app_manifest: /tmp/spendsense-platform-app.yaml
   tasks:
