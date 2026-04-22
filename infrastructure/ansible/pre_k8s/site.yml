@@ -135,9 +135,27 @@
         mode: "0755"
       when: inventory_hostname in groups['control_plane']
 
+    - name: Ensure Docker config directory exists on control plane
+      ansible.builtin.file:
+        path: /etc/docker
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      when: inventory_hostname in groups['control_plane']
+
     - name: Ensure containerd data root exists on control plane
       ansible.builtin.file:
         path: "{{ effective_containerd_data_root }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      when: inventory_hostname in groups['control_plane']
+
+    - name: Ensure containerd config directory exists on control plane
+      ansible.builtin.file:
+        path: /etc/containerd
         state: directory
         owner: root
         group: root

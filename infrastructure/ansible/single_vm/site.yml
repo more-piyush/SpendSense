@@ -124,9 +124,25 @@
         group: root
         mode: "0755"
 
+    - name: Ensure Docker config directory exists
+      ansible.builtin.file:
+        path: /etc/docker
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
     - name: Ensure containerd data root exists on attached volume
       ansible.builtin.file:
         path: "{{ containerd_data_root }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Ensure containerd config directory exists
+      ansible.builtin.file:
+        path: /etc/containerd
         state: directory
         owner: root
         group: root

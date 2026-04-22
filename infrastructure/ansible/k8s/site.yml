@@ -5,8 +5,8 @@
   vars_files:
     - ../group_vars/all.yml
   vars:
-    effective_k3s_data_dir: "{{ k3s_data_dir | default('/data/k3s') }}"
-    effective_k3s_local_storage_path: "{{ k3s_local_storage_path | default('/data/local-path-provisioner') }}"
+    effective_k3s_data_dir: "{{ k3s_data_dir | default('/data/k3s', true) }}"
+    effective_k3s_local_storage_path: "{{ k3s_local_storage_path | default('/data/local-path-provisioner', true) }}"
     install_k3s_server_cmd: >
       curl -sfL https://get.k3s.io |
       INSTALL_K3S_CHANNEL={{ k3s_install_channel }}
@@ -32,7 +32,7 @@
   vars_files:
     - ../group_vars/all.yml
   vars:
-    server_host: "{{ hostvars[groups['control_plane'][0]].ansible_host }}"
+    server_host: "{{ hostvars[groups['control_plane'][0]].ansible_host | default(groups['control_plane'][0], true) }}"
     install_k3s_agent_cmd: >
       curl -sfL https://get.k3s.io |
       INSTALL_K3S_CHANNEL={{ k3s_install_channel }}

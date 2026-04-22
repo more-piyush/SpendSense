@@ -7,15 +7,36 @@
     - ../group_vars/all.yml
   vars:
     argocd_app_manifest: /tmp/spendsense-platform-app.yaml
+    k3s_kubeconfig_path: "/etc/rancher/k3s/k3s.yaml"
+    kubectl_cmd:
+      - /usr/local/bin/k3s
+      - kubectl
   tasks:
+    - name: Wait for Kubernetes API to become reachable
+      ansible.builtin.command:
+        argv: "{{ kubectl_cmd + ['get', 'nodes'] }}"
+      environment:
+        KUBECONFIG: "{{ k3s_kubeconfig_path }}"
+      register: argocd_kubectl_ready
+      retries: 24
+      delay: 10
+      until: argocd_kubectl_ready.rc == 0
+      changed_when: false
+
     - name: Ensure Argo CD namespace exists
-      ansible.builtin.command: kubectl create namespace {{ argocd_namespace }}
+      ansible.builtin.command:
+        argv: "{{ kubectl_cmd + ['create', 'namespace', argocd_namespace] }}"
+      environment:
+        KUBECONFIG: "{{ k3s_kubeconfig_path }}"
       register: argocd_ns
       failed_when: argocd_ns.rc != 0 and "AlreadyExists" not in argocd_ns.stderr
       changed_when: "'created' in argocd_ns.stdout"
 
     - name: Install Argo CD
-      ansible.builtin.command: kubectl apply -n {{ argocd_namespace }} -f {{ argocd_install_manifest }}
+      ansible.builtin.command:
+        argv: "{{ kubectl_cmd + ['apply', '-n', argocd_namespace, '-f', argocd_install_manifest] }}"
+      environment:
+        KUBECONFIG: "{{ k3s_kubeconfig_path }}"
       changed_when: false
 
     - name: Render Argo CD application manifest
@@ -25,5 +46,8 @@
         mode: "0644"
 
     - name: Register SpendSense platform app in Argo CD
-      ansible.builtin.command: kubectl apply -f {{ argocd_app_manifest }}
+      ansible.builtin.command:
+        argv: "{{ kubectl_cmd + ['apply', '-f', argocd_app_manifest] }}"
+      environment:
+        KUBECONFIG: "{{ k3s_kubeconfig_path }}"
       changed_when: false
