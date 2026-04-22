@@ -13,3 +13,4 @@ infrastructure/tf/kvm/clouds.yaml
 __pycache__/
 *.pyc
 .env
+deploy.env

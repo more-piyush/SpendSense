@@ -163,6 +163,8 @@ jobs:
 
           Path("infrastructure/tf/kvm/terraform.tfvars").write_text(tfvars, encoding="utf-8")
           Path("infrastructure/ansible/group_vars/all.yml").write_text(ansible_all, encoding="utf-8")
+          Path("infrastructure/ansible/inventory/chameleon/group_vars").mkdir(parents=True, exist_ok=True)
+          Path("infrastructure/ansible/inventory/chameleon/group_vars/all.yml").write_text(ansible_all, encoding="utf-8")
           Path("infrastructure/config/deploy.env").write_text(deploy_env, encoding="utf-8")
           PY
 
