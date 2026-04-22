@@ -111,16 +111,32 @@
         fstype: "{{ data_volume_filesystem }}"
         state: mounted
 
-    - name: Ensure heavy-storage directories exist on attached volume
+    - name: Ensure Docker data root exists on attached volume
+      ansible.builtin.file:
+        path: "{{ docker_data_root }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Ensure K3s data directories exist on attached volume
       ansible.builtin.file:
         path: "{{ item }}"
         state: directory
+        owner: root
+        group: root
         mode: "0755"
       loop:
-        - "{{ docker_data_root }}"
         - "{{ k3s_data_dir }}"
         - "{{ k3s_local_storage_path }}"
-        - "{{ build_cache_root }}"
+
+    - name: Ensure build cache root exists and is writable on attached volume
+      ansible.builtin.file:
+        path: "{{ build_cache_root }}"
+        state: directory
+        owner: "{{ deploy_user }}"
+        group: "{{ deploy_user }}"
+        mode: "1777"
 
     - name: Install Docker engine
       ansible.builtin.apt:

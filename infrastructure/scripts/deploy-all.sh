@@ -86,6 +86,7 @@ run kubectl get nodes
 
 phase "Phase 3/9 - Build and import runtime images"
 run mkdir -p "${BUILD_CACHE_ROOT}"
+run chmod 1777 "${BUILD_CACHE_ROOT}"
 images=(
   "firefly-data:latest|Data/pipelines/Dockerfile|Data/pipelines"
   "spendsense/training:latest|Training/training_scripts/Dockerfile|Training/training_scripts"

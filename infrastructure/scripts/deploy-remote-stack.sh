@@ -44,6 +44,9 @@ run sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-reco
   rsync \
   unzip
 run sudo systemctl enable --now docker
+run sudo mkdir -p "${BUILD_CACHE_ROOT}"
+run sudo chown "$(id -u):$(id -g)" "${BUILD_CACHE_ROOT}"
+run sudo chmod 1777 "${BUILD_CACHE_ROOT}"
 
 if ! command -v helm >/dev/null 2>&1; then
   run bash -lc "curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash"
