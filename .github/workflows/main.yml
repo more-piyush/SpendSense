@@ -118,6 +118,10 @@ jobs:
           def cleaned(name, default=""):
               return val(name, default).strip()
 
+          def nonempty(name, default=""):
+              value = val(name, "").strip()
+              return value or default
+
           def hcl_string(value):
               return json.dumps(value)
 
@@ -131,30 +135,30 @@ jobs:
           tfvars = f'''suffix = {hcl_string(cleaned("TF_SUFFIX"))}
           key = {hcl_string(cleaned("TF_KEYPAIR_NAME"))}
           reservation = {hcl_string(cleaned("TF_RESERVATION_ID"))}
-          ssh_user = {hcl_string(cleaned("ANSIBLE_SSH_USER", "cc"))}
-          image_name = {hcl_string(cleaned("TF_IMAGE_NAME", "CC-Ubuntu24.04"))}
+          ssh_user = {hcl_string(nonempty("ANSIBLE_SSH_USER", "cc"))}
+          image_name = {hcl_string(nonempty("TF_IMAGE_NAME", "CC-Ubuntu24.04"))}
           data_volume_name = {hcl_string(cleaned("TF_DATA_VOLUME_NAME"))}
-          floating_ip_pool = {hcl_string(cleaned("TF_FLOATING_IP_POOL", "public"))}
+          floating_ip_pool = {hcl_string(nonempty("TF_FLOATING_IP_POOL", "public"))}
           nodes = {tf_nodes_yaml}'''
 
           ansible_all = f'''---
-          ansible_user: {cleaned("ANSIBLE_SSH_USER", "cc")}
+          ansible_user: {nonempty("ANSIBLE_SSH_USER", "cc")}
           k3s_token: "{cleaned("K3S_TOKEN")}"
-          kubeconfig_local_path: "{cleaned("KUBE_CONFIG_LOCAL_PATH", "/tmp/spendsense-chameleon.yaml")}"
-          k3s_install_channel: "{cleaned("K3S_INSTALL_CHANNEL", "stable")}"
-          k3s_server_extra_args: "{cleaned("K3S_SERVER_EXTRA_ARGS", "--write-kubeconfig-mode 644 --disable traefik")}"
-          data_volume_device: "{cleaned("DATA_VOLUME_DEVICE", "/dev/vdb")}"
-          data_volume_mount_path: "{cleaned("DATA_VOLUME_MOUNT_PATH", "/data")}"
-          data_volume_filesystem: "{cleaned("DATA_VOLUME_FILESYSTEM", "ext4")}"
-          containerd_data_root: "{cleaned("CONTAINERD_DATA_ROOT", "/data/containerd")}"
-          docker_data_root: "{cleaned("DOCKER_DATA_ROOT", "/data/docker")}"
-          k3s_data_dir: "{cleaned("K3S_DATA_DIR", "/data/k3s")}"
-          k3s_local_storage_path: "{cleaned("K3S_LOCAL_STORAGE_PATH", "/data/local-path-provisioner")}"
-          build_cache_root: "{cleaned("BUILD_CACHE_ROOT", "/data/tmp")}"
+          kubeconfig_local_path: "{nonempty("KUBE_CONFIG_LOCAL_PATH", "/tmp/spendsense-chameleon.yaml")}"
+          k3s_install_channel: "{nonempty("K3S_INSTALL_CHANNEL", "stable")}"
+          k3s_server_extra_args: "{nonempty("K3S_SERVER_EXTRA_ARGS", "--write-kubeconfig-mode 644 --disable traefik")}"
+          data_volume_device: "{nonempty("DATA_VOLUME_DEVICE", "/dev/vdb")}"
+          data_volume_mount_path: "{nonempty("DATA_VOLUME_MOUNT_PATH", "/data")}"
+          data_volume_filesystem: "{nonempty("DATA_VOLUME_FILESYSTEM", "ext4")}"
+          containerd_data_root: "{nonempty("CONTAINERD_DATA_ROOT", "/data/containerd")}"
+          docker_data_root: "{nonempty("DOCKER_DATA_ROOT", "/data/docker")}"
+          k3s_data_dir: "{nonempty("K3S_DATA_DIR", "/data/k3s")}"
+          k3s_local_storage_path: "{nonempty("K3S_LOCAL_STORAGE_PATH", "/data/local-path-provisioner")}"
+          build_cache_root: "{nonempty("BUILD_CACHE_ROOT", "/data/tmp")}"
           argocd_namespace: "argocd"
           argocd_install_manifest: "https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml"
           argocd_repo_url: "{cleaned("ARGOCD_REPO_URL")}"
-          argocd_target_revision: "{cleaned("ARGOCD_TARGET_REVISION", "main")}"
+          argocd_target_revision: "{nonempty("ARGOCD_TARGET_REVISION", "main")}"
           argocd_app_name: "spendsense-platform"
           argocd_app_path: "infrastructure/k8s"
           argocd_destination_namespace: "firefly-platform"
@@ -162,25 +166,25 @@ jobs:
           '''
 
           deploy_env = f'''FLOATING_IP="TO_BE_FILLED_BY_TERRAFORM"
-          DATA_VOLUME_DEVICE="{cleaned("DATA_VOLUME_DEVICE", "/dev/vdb")}"
-          DATA_VOLUME_MOUNT_PATH="{cleaned("DATA_VOLUME_MOUNT_PATH", "/data")}"
-          DATA_VOLUME_FILESYSTEM="{cleaned("DATA_VOLUME_FILESYSTEM", "ext4")}"
-          CONTAINERD_DATA_ROOT="{cleaned("CONTAINERD_DATA_ROOT", "/data/containerd")}"
-          DOCKER_DATA_ROOT="{cleaned("DOCKER_DATA_ROOT", "/data/docker")}"
-          K3S_DATA_DIR="{cleaned("K3S_DATA_DIR", "/data/k3s")}"
-          K3S_LOCAL_STORAGE_PATH="{cleaned("K3S_LOCAL_STORAGE_PATH", "/data/local-path-provisioner")}"
-          BUILD_CACHE_ROOT="{cleaned("BUILD_CACHE_ROOT", "/data/tmp")}"
-          K3S_INSTALL_CHANNEL="{cleaned("K3S_INSTALL_CHANNEL", "stable")}"
-          K3S_SERVER_EXTRA_ARGS="{cleaned("K3S_SERVER_EXTRA_ARGS", "--write-kubeconfig-mode 644 --disable traefik")}"
-          INSTALL_TERRAFORM="{cleaned("INSTALL_TERRAFORM", "false")}"
+          DATA_VOLUME_DEVICE="{nonempty("DATA_VOLUME_DEVICE", "/dev/vdb")}"
+          DATA_VOLUME_MOUNT_PATH="{nonempty("DATA_VOLUME_MOUNT_PATH", "/data")}"
+          DATA_VOLUME_FILESYSTEM="{nonempty("DATA_VOLUME_FILESYSTEM", "ext4")}"
+          CONTAINERD_DATA_ROOT="{nonempty("CONTAINERD_DATA_ROOT", "/data/containerd")}"
+          DOCKER_DATA_ROOT="{nonempty("DOCKER_DATA_ROOT", "/data/docker")}"
+          K3S_DATA_DIR="{nonempty("K3S_DATA_DIR", "/data/k3s")}"
+          K3S_LOCAL_STORAGE_PATH="{nonempty("K3S_LOCAL_STORAGE_PATH", "/data/local-path-provisioner")}"
+          BUILD_CACHE_ROOT="{nonempty("BUILD_CACHE_ROOT", "/data/tmp")}"
+          K3S_INSTALL_CHANNEL="{nonempty("K3S_INSTALL_CHANNEL", "stable")}"
+          K3S_SERVER_EXTRA_ARGS="{nonempty("K3S_SERVER_EXTRA_ARGS", "--write-kubeconfig-mode 644 --disable traefik")}"
+          INSTALL_TERRAFORM="{nonempty("INSTALL_TERRAFORM", "false")}"
           POSTGRES_PASSWORD="{cleaned("POSTGRES_PASSWORD")}"
           FIREFLY_APP_KEY="{firefly_app_key}"
           MINIO_ROOT_USER="{cleaned("MINIO_ROOT_USER", "minioadmin")}"
           MINIO_ROOT_PASSWORD="{cleaned("MINIO_ROOT_PASSWORD")}"
-          INITIAL_TRAINING_WARMUP_SECONDS="{cleaned("INITIAL_TRAINING_WARMUP_SECONDS", "600")}"
-          ACTIVE_MODEL_RETRY_SECONDS="{cleaned("ACTIVE_MODEL_RETRY_SECONDS", "120")}"
-          ACTIVE_MODEL_MAX_WAIT_SECONDS="{cleaned("ACTIVE_MODEL_MAX_WAIT_SECONDS", "7200")}"
-          DEPLOY_MONITORING="{cleaned("DEPLOY_MONITORING", "true")}"
+          INITIAL_TRAINING_WARMUP_SECONDS="{nonempty("INITIAL_TRAINING_WARMUP_SECONDS", "600")}"
+          ACTIVE_MODEL_RETRY_SECONDS="{nonempty("ACTIVE_MODEL_RETRY_SECONDS", "120")}"
+          ACTIVE_MODEL_MAX_WAIT_SECONDS="{nonempty("ACTIVE_MODEL_MAX_WAIT_SECONDS", "7200")}"
+          DEPLOY_MONITORING="{nonempty("DEPLOY_MONITORING", "true")}"
           '''
 
           Path("infrastructure/tf/kvm/terraform.tfvars").write_text(tfvars, encoding="utf-8")
