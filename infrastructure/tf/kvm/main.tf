@@ -4,6 +4,34 @@ locals {
   worker_keys       = slice(local.node_keys, 1, length(local.node_keys))
 }
 
+resource "openstack_networking_secgroup_v2" "public_services" {
+  name        = "spendsense-public-${var.suffix}"
+  description = "Public SSH and SpendSense NodePort access for ${var.suffix}"
+}
+
+resource "openstack_networking_secgroup_rule_v2" "public_tcp_ingress" {
+  for_each          = toset([for port in var.public_tcp_ports : tostring(port)])
+  direction         = "ingress"
+  ethertype         = "IPv4"
+  protocol          = "tcp"
+  port_range_min    = tonumber(each.value)
+  port_range_max    = tonumber(each.value)
+  remote_ip_prefix  = var.public_ingress_cidr
+  security_group_id = openstack_networking_secgroup_v2.public_services.id
+}
+
+resource "openstack_networking_secgroup_rule_v2" "public_egress_ipv4" {
+  direction         = "egress"
+  ethertype         = "IPv4"
+  security_group_id = openstack_networking_secgroup_v2.public_services.id
+}
+
+resource "openstack_networking_secgroup_rule_v2" "public_egress_ipv6" {
+  direction         = "egress"
+  ethertype         = "IPv6"
+  security_group_id = openstack_networking_secgroup_v2.public_services.id
+}
+
 resource "openstack_networking_network_v2" "private_net" {
   name                  = "private-net-mlops-${var.suffix}"
   port_security_enabled = false
@@ -33,14 +61,7 @@ resource "openstack_networking_port_v2" "sharednet1_ports" {
   name       = "sharednet1-${each.key}-mlops-${var.suffix}"
   network_id = data.openstack_networking_network_v2.sharednet1.id
   security_group_ids = [
-    data.openstack_networking_secgroup_v2.allow_ssh.id,
-    data.openstack_networking_secgroup_v2.allow_9001.id,
-    data.openstack_networking_secgroup_v2.allow_8000.id,
-    data.openstack_networking_secgroup_v2.allow_8080.id,
-    data.openstack_networking_secgroup_v2.allow_8081.id,
-    data.openstack_networking_secgroup_v2.allow_8082.id,
-    data.openstack_networking_secgroup_v2.allow_http_80.id,
-    data.openstack_networking_secgroup_v2.allow_9090.id,
+    openstack_networking_secgroup_v2.public_services.id,
   ]
 }
 

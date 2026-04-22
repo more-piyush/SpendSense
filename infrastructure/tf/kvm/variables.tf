@@ -46,3 +46,23 @@ variable "floating_ip_pool" {
   type        = string
   default     = "public"
 }
+
+variable "public_ingress_cidr" {
+  description = "CIDR allowed to access the public-facing SSH and NodePort services."
+  type        = string
+  default     = "0.0.0.0/0"
+}
+
+variable "public_tcp_ports" {
+  description = "Public TCP ports to open on the control-plane floating IP."
+  type        = list(number)
+  default = [
+    22,
+    30080,
+    30081,
+    30300,
+    30500,
+    30900,
+    30901,
+  ]
+}

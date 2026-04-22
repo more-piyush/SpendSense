@@ -22,3 +22,8 @@ output "attached_data_volume_id" {
   description = "Existing Cinder volume ID attached to node1, if configured."
   value       = var.data_volume_name != "" ? data.openstack_blockstorage_volume_v3.data_volume[0].id : null
 }
+
+output "public_security_group_id" {
+  description = "Security group ID attached to the public/sharednet port."
+  value       = openstack_networking_secgroup_v2.public_services.id
+}
