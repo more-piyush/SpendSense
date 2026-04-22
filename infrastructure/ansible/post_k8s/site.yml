@@ -10,6 +10,25 @@
     k8s_manifest_dest: /opt/spendsense/k8s
     kubeconfig_tmp_path: "/tmp/spendsense-kubeconfig"
   tasks:
+    - name: Ensure K3s service is enabled and running
+      ansible.builtin.service:
+        name: k3s
+        state: started
+        enabled: true
+
+    - name: Wait for K3s kubeconfig on control plane
+      ansible.builtin.wait_for:
+        path: /etc/rancher/k3s/k3s.yaml
+        timeout: 180
+
+    - name: Wait for Kubernetes API to become reachable
+      ansible.builtin.command: kubectl get nodes
+      register: kubectl_ready
+      retries: 24
+      delay: 10
+      until: kubectl_ready.rc == 0
+      changed_when: false
+
     - name: Ensure kubectl shim exists
       ansible.builtin.file:
         src: /usr/local/bin/k3s
