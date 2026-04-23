@@ -9,7 +9,7 @@ NS="firefly-platform"
 
 WARMUP_SECONDS="${INITIAL_TRAINING_WARMUP_SECONDS:-600}"
 RETRY_SECONDS="${ACTIVE_MODEL_RETRY_SECONDS:-120}"
-MAX_WAIT_SECONDS="${ACTIVE_MODEL_MAX_WAIT_SECONDS:-36000}"
+MAX_WAIT_SECONDS="${ACTIVE_MODEL_MAX_WAIT_SECONDS:-600}"
 
 job_manifests=(
   "train-cat-logreg-baseline.yaml"
@@ -37,55 +37,6 @@ log() {
 
 show_status() {
   kubectl get jobs,pods -n "${NS}" | awk 'NR==1 || /train-|set-active-models/'
-}
-
-wait_for_training_jobs() {
-  local start_ts now completed failed pending job
-  start_ts="$(date +%s)"
-
-  while true; do
-    completed=0
-    failed=0
-    pending=0
-
-    for job in "${job_names[@]}"; do
-      if kubectl get job "${job}" -n "${NS}" >/dev/null 2>&1; then
-        if [[ "$(kubectl get job "${job}" -n "${NS}" -o jsonpath='{.status.conditions[?(@.type=="Complete")].status}')" == "True" ]]; then
-          completed=$((completed + 1))
-        elif [[ "$(kubectl get job "${job}" -n "${NS}" -o jsonpath='{.status.conditions[?(@.type=="Failed")].status}')" == "True" ]]; then
-          failed=$((failed + 1))
-        else
-          pending=$((pending + 1))
-        fi
-      else
-        pending=$((pending + 1))
-      fi
-    done
-
-    log "Training status: ${completed}/${#job_names[@]} complete, ${pending} pending, ${failed} failed."
-    show_status
-
-    if (( failed > 0 )); then
-      log "At least one training job failed."
-      for job in "${job_names[@]}"; do
-        kubectl logs -n "${NS}" job/"${job}" --tail=200 || true
-      done
-      return 1
-    fi
-
-    if (( completed == ${#job_names[@]} )); then
-      log "All initial training jobs have completed."
-      return 0
-    fi
-
-    now="$(date +%s)"
-    if (( now - start_ts >= MAX_WAIT_SECONDS )); then
-      log "Timed out waiting for initial training jobs to finish."
-      return 1
-    fi
-
-    sleep "${RETRY_SECONDS}"
-  done
 }
 
 attempt_set_active() {
@@ -127,14 +78,24 @@ while (( remaining > 0 )); do
   show_status
 done
 
-log "Warmup complete. Waiting for all training jobs to finish before activating models."
-wait_for_training_jobs
-
-log "All training jobs are complete. Running active-model selection."
+log "Warmup complete. Attempting first active-model selection."
 if attempt_set_active; then
   log "Active models selected and serving restarted."
   exit 0
 fi
 
-log "Active-model selection failed after training completed."
+log "Initial activation attempt did not succeed yet. Retrying until models are ready."
+elapsed_wait=0
+while (( elapsed_wait < MAX_WAIT_SECONDS )); do
+  sleep "${RETRY_SECONDS}"
+  elapsed_wait=$((elapsed_wait + RETRY_SECONDS))
+  log "Retrying active-model selection after ${elapsed_wait}s of additional wait."
+  show_status
+  if attempt_set_active; then
+    log "Active models selected and serving restarted."
+    exit 0
+  fi
+done
+
+log "Failed to activate models within ${MAX_WAIT_SECONDS}s after warmup."
 exit 1
