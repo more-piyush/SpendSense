@@ -598,6 +598,8 @@ def prepare_categorization_data(
         external["categories"] = external["categories"].apply(
             lambda value: json.dumps(value) if isinstance(value, list) else value
         )
+    if "amount" in external.columns:
+        external["amount"] = pd.to_numeric(external["amount"], errors="coerce")
     if "timestamp" not in external.columns:
         external["timestamp"] = pd.Timestamp("2020-01-01", tz="UTC")
     external["sample_weight"] = SAMPLE_WEIGHTS["external"]
@@ -643,6 +645,8 @@ def prepare_categorization_data(
         )
 
     prod_df = pd.DataFrame(prod_records)
+    if "amount" in prod_df.columns:
+        prod_df["amount"] = pd.to_numeric(prod_df["amount"], errors="coerce")
     prod_df["timestamp"] = pd.to_datetime(prod_df["timestamp"], utc=True, errors="coerce")
 
     n_prod = len(prod_df)
