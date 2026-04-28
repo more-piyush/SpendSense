@@ -17,6 +17,7 @@ kubectl apply -f "${K8S_DIR}/storage/pvc-training-state.yaml"
 
 kubectl apply -f "${K8S_DIR}/postgres/deployment.yaml"
 kubectl apply -f "${K8S_DIR}/postgres/service.yaml"
+kubectl rollout restart deployment/postgres -n firefly-platform
 kubectl rollout status deployment/postgres -n firefly-platform --timeout=240s
 kubectl delete -f "${K8S_DIR}/postgres-bootstrap/job.yaml" --ignore-not-found=true
 kubectl apply -f "${K8S_DIR}/postgres-bootstrap/job.yaml"
@@ -46,10 +47,12 @@ fi
 
 kubectl apply -f "${K8S_DIR}/minio/deployment.yaml"
 kubectl apply -f "${K8S_DIR}/minio/service.yaml"
+kubectl rollout restart deployment/minio -n firefly-platform
 kubectl rollout status deployment/minio -n firefly-platform --timeout=240s
 
 kubectl apply -f "${K8S_DIR}/mlflow/deployment.yaml"
 kubectl apply -f "${K8S_DIR}/mlflow/service.yaml"
+kubectl rollout restart deployment/mlflow -n firefly-platform
 kubectl rollout status deployment/mlflow -n firefly-platform --timeout=240s
 
 kubectl delete -f "${K8S_DIR}/minio-bootstrap/job.yaml" --ignore-not-found=true
@@ -79,12 +82,18 @@ kubectl wait --for=condition=complete job/firefly-bootstrap -n firefly-platform 
 
 kubectl apply -f "${K8S_DIR}/firefly/deployment.yaml"
 kubectl apply -f "${K8S_DIR}/firefly/service.yaml"
+kubectl rollout restart deployment/firefly -n firefly-platform
+kubectl rollout status deployment/firefly -n firefly-platform --timeout=300s
 
 kubectl apply -f "${K8S_DIR}/serving/deployment.yaml"
 kubectl apply -f "${K8S_DIR}/serving/service.yaml"
 kubectl apply -f "${K8S_DIR}/serving/canary-deployment.yaml"
 kubectl apply -f "${K8S_DIR}/serving/canary-service.yaml"
 kubectl apply -f "${K8S_DIR}/serving/canary-public-service.yaml"
+kubectl rollout restart deployment/serving-baseline -n firefly-platform
+kubectl rollout restart deployment/serving-canary -n firefly-platform
+kubectl rollout status deployment/serving-baseline -n firefly-platform --timeout=300s
+kubectl rollout status deployment/serving-canary -n firefly-platform --timeout=300s
 
 kubectl apply -f "${K8S_DIR}/data/configmap.yaml"
 kubectl apply -f "${K8S_DIR}/data/cronjob.yaml"
