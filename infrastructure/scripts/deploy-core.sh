@@ -21,11 +21,27 @@ kubectl rollout status deployment/postgres -n firefly-platform --timeout=240s
 kubectl delete -f "${K8S_DIR}/postgres-bootstrap/job.yaml" --ignore-not-found=true
 kubectl apply -f "${K8S_DIR}/postgres-bootstrap/job.yaml"
 if ! kubectl wait --for=condition=complete job/postgres-bootstrap -n firefly-platform --timeout=240s; then
-  echo "[WARN] postgres-bootstrap did not complete on the first attempt. Trying password recovery."
-  bash "${SCRIPT_DIR}/recover-postgres-password.sh"
-  kubectl delete -f "${K8S_DIR}/postgres-bootstrap/job.yaml" --ignore-not-found=true
-  kubectl apply -f "${K8S_DIR}/postgres-bootstrap/job.yaml"
-  kubectl wait --for=condition=complete job/postgres-bootstrap -n firefly-platform --timeout=240s
+  echo "[WARN] postgres-bootstrap did not complete on the first attempt."
+  bootstrap_logs="$(kubectl logs -n firefly-platform job/postgres-bootstrap 2>&1 || true)"
+  postgres_logs="$(kubectl logs -n firefly-platform deployment/postgres 2>&1 || true)"
+
+  if printf '%s\n%s\n' "${bootstrap_logs}" "${postgres_logs}" | grep -qi 'password authentication failed'; then
+    echo "[WARN] Detected PostgreSQL password mismatch on existing data volume. Resetting PostgreSQL state."
+    kubectl delete -f "${K8S_DIR}/postgres-bootstrap/job.yaml" --ignore-not-found=true
+    kubectl delete deployment postgres -n firefly-platform --ignore-not-found=true
+    kubectl delete pvc postgres-pvc -n firefly-platform --ignore-not-found=true
+
+    kubectl apply -f "${K8S_DIR}/storage/pvc-postgres.yaml"
+    kubectl apply -f "${K8S_DIR}/postgres/deployment.yaml"
+    kubectl apply -f "${K8S_DIR}/postgres/service.yaml"
+    kubectl rollout status deployment/postgres -n firefly-platform --timeout=240s
+    kubectl apply -f "${K8S_DIR}/postgres-bootstrap/job.yaml"
+    kubectl wait --for=condition=complete job/postgres-bootstrap -n firefly-platform --timeout=240s
+  else
+    printf '%s\n' "${bootstrap_logs}"
+    printf '%s\n' "${postgres_logs}"
+    exit 1
+  fi
 fi
 
 kubectl apply -f "${K8S_DIR}/minio/deployment.yaml"

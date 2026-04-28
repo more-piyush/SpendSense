@@ -311,14 +311,6 @@ jobs:
           ssh -i "${HOME}/.ssh/id_ed25519" "${ANSIBLE_SSH_USER}@${CONTROL_PLANE_IP}" \
             "cd ${REMOTE_REPO_PATH} && FLOATING_IP='${CONTROL_PLANE_IP}' bash infrastructure/scripts/deploy-remote-stack.sh build-images"
 
-      - name: Remote PostgreSQL password recovery
-        env:
-          CONTROL_PLANE_IP: ${{ steps.tf.outputs.control_plane_ip }}
-          ANSIBLE_SSH_USER: ${{ vars.ANSIBLE_SSH_USER }}
-        run: |
-          ssh -i "${HOME}/.ssh/id_ed25519" "${ANSIBLE_SSH_USER}@${CONTROL_PLANE_IP}" \
-            "cd ${REMOTE_REPO_PATH} && bash infrastructure/scripts/create-secrets-from-env.sh && bash infrastructure/scripts/recover-postgres-password.sh"
-
       - name: Remote core platform and serving deployment
         env:
           CONTROL_PLANE_IP: ${{ steps.tf.outputs.control_plane_ip }}
