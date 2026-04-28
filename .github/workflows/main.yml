@@ -181,7 +181,7 @@ jobs:
           POSTGRES_PASSWORD="{cleaned("POSTGRES_PASSWORD")}"
           FIREFLY_APP_KEY="{firefly_app_key}"
           MINIO_ROOT_USER="{cleaned("MINIO_ROOT_USER", "minioadmin")}"
-          MINIO_ROOT_PASSWORD="{cleaned("MINIO_ROOT_PASSWORD")}"
+          MINIO_ROOT_PASSWORD="{cleaned("MINIO_ROOT_PASSWORD","minioadminpassword")}"
           INITIAL_TRAINING_WARMUP_SECONDS="{nonempty("INITIAL_TRAINING_WARMUP_SECONDS", "600")}"
           ACTIVE_MODEL_RETRY_SECONDS="{nonempty("ACTIVE_MODEL_RETRY_SECONDS", "120")}"
           ACTIVE_MODEL_MAX_WAIT_SECONDS="{nonempty("ACTIVE_MODEL_MAX_WAIT_SECONDS", "600")}"
