@@ -20,7 +20,13 @@ kubectl apply -f "${K8S_DIR}/postgres/service.yaml"
 kubectl rollout status deployment/postgres -n firefly-platform --timeout=240s
 kubectl delete -f "${K8S_DIR}/postgres-bootstrap/job.yaml" --ignore-not-found=true
 kubectl apply -f "${K8S_DIR}/postgres-bootstrap/job.yaml"
-kubectl wait --for=condition=complete job/postgres-bootstrap -n firefly-platform --timeout=240s
+if ! kubectl wait --for=condition=complete job/postgres-bootstrap -n firefly-platform --timeout=240s; then
+  echo "[WARN] postgres-bootstrap did not complete on the first attempt. Trying password recovery."
+  bash "${SCRIPT_DIR}/recover-postgres-password.sh"
+  kubectl delete -f "${K8S_DIR}/postgres-bootstrap/job.yaml" --ignore-not-found=true
+  kubectl apply -f "${K8S_DIR}/postgres-bootstrap/job.yaml"
+  kubectl wait --for=condition=complete job/postgres-bootstrap -n firefly-platform --timeout=240s
+fi
 
 kubectl apply -f "${K8S_DIR}/minio/deployment.yaml"
 kubectl apply -f "${K8S_DIR}/minio/service.yaml"
