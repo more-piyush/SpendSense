@@ -109,7 +109,7 @@ data:
           "title": "CronJob Failures",
           "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
           "targets": [
-            {"expr": "sum by (job_name) (increase(kube_job_status_failed{namespace=\"firefly-platform\",job_name=~\"data-pipeline-nightly.*|nightly-eval.*|monthly-retrain.*\"}[24h]))", "legendFormat": "{{job_name}}", "refId": "A"}
+            {"expr": "sum by (job_name) (increase(kube_job_status_failed{namespace=\"firefly-platform\",job_name=~\"data-pipeline-nightly.*|cyclic-categorization-retrain.*|cyclic-trend-retrain.*\"}[24h]))", "legendFormat": "{{job_name}}", "refId": "A"}
           ]
         },
         {
@@ -117,7 +117,7 @@ data:
           "title": "CronJob Successes",
           "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
           "targets": [
-            {"expr": "sum by (job_name) (increase(kube_job_status_succeeded{namespace=\"firefly-platform\",job_name=~\"data-pipeline-nightly.*|nightly-eval.*|monthly-retrain.*\"}[24h]))", "legendFormat": "{{job_name}}", "refId": "A"}
+            {"expr": "sum by (job_name) (increase(kube_job_status_succeeded{namespace=\"firefly-platform\",job_name=~\"data-pipeline-nightly.*|cyclic-categorization-retrain.*|cyclic-trend-retrain.*\"}[24h]))", "legendFormat": "{{job_name}}", "refId": "A"}
           ]
         },
         {

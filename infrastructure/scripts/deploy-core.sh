@@ -54,10 +54,12 @@ kubectl apply -f "${K8S_DIR}/data/cronjob.yaml"
 
 kubectl apply -f "${K8S_DIR}/training/candidate-configmap.yaml"
 kubectl apply -f "${K8S_DIR}/training/configmap.yaml"
-kubectl apply -f "${K8S_DIR}/retraining/configmap.yaml"
-kubectl apply -f "${K8S_DIR}/cronjobs/nightly-eval.yaml"
-kubectl apply -f "${K8S_DIR}/cronjobs/monthly-retrain.yaml"
-kubectl apply -f "${K8S_DIR}/cronjobs/weekly-categorization-retraining-data.yaml"
-kubectl apply -f "${K8S_DIR}/cronjobs/monthly-trend-retraining-data.yaml"
+kubectl delete -f "${K8S_DIR}/retraining/configmap.yaml" --ignore-not-found=true
+kubectl delete -f "${K8S_DIR}/cronjobs/nightly-eval.yaml" --ignore-not-found=true
+kubectl delete -f "${K8S_DIR}/cronjobs/monthly-retrain.yaml" --ignore-not-found=true
+kubectl delete -f "${K8S_DIR}/cronjobs/weekly-categorization-retraining-data.yaml" --ignore-not-found=true
+kubectl delete -f "${K8S_DIR}/cronjobs/monthly-trend-retraining-data.yaml" --ignore-not-found=true
+kubectl apply -f "${K8S_DIR}/cronjobs/cyclic-categorization-retrain.yaml"
+kubectl apply -f "${K8S_DIR}/cronjobs/cyclic-trend-retrain.yaml"
 
 echo "[INFO] Integrated core services deployed."

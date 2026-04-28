@@ -64,7 +64,7 @@ spec:
             description: A container in the firefly-platform namespace restarted more than 3 times in 30 minutes.
 
         - alert: SpendSenseCronJobFailures
-          expr: increase(kube_job_status_failed{namespace="firefly-platform",job_name=~"data-pipeline-nightly.*|nightly-eval.*|monthly-retrain.*"}[6h]) > 0
+          expr: increase(kube_job_status_failed{namespace="firefly-platform",job_name=~"data-pipeline-nightly.*|cyclic-categorization-retrain.*|cyclic-trend-retrain.*"}[6h]) > 0
           for: 15m
           labels:
             severity: warning

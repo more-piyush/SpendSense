@@ -91,7 +91,6 @@ images=(
   "firefly-data:latest|Data/pipelines/Dockerfile|Data/pipelines"
   "spendsense/training:latest|Training/training_scripts/Dockerfile|Training/training_scripts"
   "spendsense/serving-unified:latest|serving/Dockerfile.unified|serving"
-  "spendsense/firefly-retraining:latest|firefly-retraining/Dockerfile|firefly-retraining"
   "spendsense/firefly-custom:latest|firefly-iii-main/firefly-iii-main/Dockerfile.custom|firefly-iii-main/firefly-iii-main"
 )
 

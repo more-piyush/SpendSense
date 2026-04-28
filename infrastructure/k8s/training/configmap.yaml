@@ -6,11 +6,18 @@ metadata:
 data:
   retrain_categorization.yaml: |
     model_type: DISTILBERT_CATEGORIZATION
+    task_type: categorization
+    model_id: cat_distilbert_retrain
+    model_family: distilbert
+    training_mode: retraining
+    initial_status: CANDIDATE
 
     feedback_source: file
     feedback_path: s3://production-logs/serving/feedback/categorization/
 
-    schedule: weekly
+    schedule_days: 4
+    lookback_days: 4
+    feedback_trigger_enabled: false
     override_rate_threshold: 0.15
     last_retrain_date: null
 
@@ -20,8 +27,19 @@ data:
     epochs: 3
     freeze_layers: 3
 
-    production_mix_ratio: 0.5
     external_data_path: s3://training-data/bls_pipeline/categorization_training.parquet
+    retraining_output_root: s3://retraining-data
+    dynamic_mix_tiers:
+      - min_user_rows: 0
+        production_share: 0.10
+      - min_user_rows: 25
+        production_share: 0.20
+      - min_user_rows: 50
+        production_share: 0.30
+      - min_user_rows: 100
+        production_share: 0.40
+      - min_user_rows: 200
+        production_share: 0.50
 
     s3:
       endpoint_url: http://minio.firefly-platform.svc.cluster.local:9000
@@ -41,11 +59,18 @@ data:
 
   retrain_trend.yaml: |
     model_type: XGBOOST_TREND
+    task_type: trend
+    model_id: trend_xgb_retrain
+    model_family: xgboost
+    training_mode: retraining
+    initial_status: CANDIDATE
 
     feedback_source: file
-    feedback_path: s3://production-logs/serving/feedback/trend_detection/
+    feedback_path: s3://production-logs/serving/feedback/trend/
 
-    schedule: monthly
+    schedule_days: 4
+    lookback_days: 4
+    feedback_trigger_enabled: false
     min_feedback_signals: 10
     last_retrain_date: null
 
@@ -56,6 +81,18 @@ data:
     reg_lambda: 2.0
 
     external_data_path: s3://training-data/bls_pipeline/trend_training.parquet
+    retraining_output_root: s3://retraining-data
+    dynamic_mix_tiers:
+      - min_user_rows: 0
+        production_share: 0.10
+      - min_user_rows: 25
+        production_share: 0.20
+      - min_user_rows: 50
+        production_share: 0.30
+      - min_user_rows: 100
+        production_share: 0.40
+      - min_user_rows: 200
+        production_share: 0.50
 
     s3:
       endpoint_url: http://minio.firefly-platform.svc.cluster.local:9000
