@@ -30,6 +30,7 @@ jobs:
       ANSIBLE_FORCE_COLOR: "true"
       PY_COLORS: "1"
       REMOTE_REPO_PATH: "~/SpendSense"
+      REMOTE_REPO_URL: "https://github.com/${{ github.repository }}.git"
       TF_DIR: infrastructure/tf/kvm
       ANSIBLE_DIR: infrastructure/ansible
     steps:
@@ -258,7 +259,26 @@ jobs:
         working-directory: ${{ env.ANSIBLE_DIR }}
         run: ansible-playbook argocd/site.yml
 
-      - name: Sync repository to control plane
+      - name: Prepare git repository on control plane
+        env:
+          CONTROL_PLANE_IP: ${{ steps.tf.outputs.control_plane_ip }}
+          ANSIBLE_SSH_USER: ${{ vars.ANSIBLE_SSH_USER }}
+          REMOTE_REPO_URL: ${{ env.REMOTE_REPO_URL }}
+          REMOTE_BRANCH: ${{ github.ref_name }}
+        run: |
+          ssh -i "${HOME}/.ssh/id_ed25519" "${ANSIBLE_SSH_USER}@${CONTROL_PLANE_IP}" \
+            "set -euo pipefail; \
+             if [ ! -d ${REMOTE_REPO_PATH}/.git ]; then \
+               rm -rf ${REMOTE_REPO_PATH}; \
+               git clone --branch '${REMOTE_BRANCH}' --single-branch '${REMOTE_REPO_URL}' ${REMOTE_REPO_PATH}; \
+             else \
+               cd ${REMOTE_REPO_PATH}; \
+               git remote set-url origin '${REMOTE_REPO_URL}'; \
+               git fetch origin '${REMOTE_BRANCH}'; \
+               git checkout -B '${REMOTE_BRANCH}' 'origin/${REMOTE_BRANCH}'; \
+             fi"
+
+      - name: Sync rendered repository contents to control plane
         env:
           CONTROL_PLANE_IP: ${{ steps.tf.outputs.control_plane_ip }}
           ANSIBLE_SSH_USER: ${{ vars.ANSIBLE_SSH_USER }}
