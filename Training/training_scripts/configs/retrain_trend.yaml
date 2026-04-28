@@ -51,6 +51,9 @@ experiment_name: trend_retrain
 direct_artifact_experiment_name: trend_retrain_s3
 artifact_location: s3://mlflow/experiments/trend_retrain_s3
 registry_path: s3://mlflow/registry
+comparison_active_models_file: active_models.json
+target_active_models_file: active_models_canary.json
+promotion_channel: canary
 
 # State persistence
 state_file: /data/retrain_state_trend.json

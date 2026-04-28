@@ -43,6 +43,7 @@ except ImportError:
 
 from export_serving_artifacts import materialize_active_serving_artifacts
 from utils import (
+    load_json_document,
     load_parquet,
     load_active_models,
     set_active_models,
@@ -163,8 +164,51 @@ def _latest_registry_entry_for_run(registry_path: str, run_id: str, config: dict
     return None
 
 
-def _current_active_registry_entry(registry_path: str, task_type: str, config: dict) -> dict | None:
-    active = load_active_models(registry_path).get(task_type)
+def _comparison_active_models_filename(config: dict) -> str:
+    return config.get("comparison_active_models_file", "active_models.json")
+
+
+def _target_active_models_filename(config: dict) -> str:
+    return config.get("target_active_models_file") or _comparison_active_models_filename(config)
+
+
+def _promotion_channel(config: dict) -> str:
+    if config.get("promotion_channel"):
+        return str(config["promotion_channel"])
+    return "canary" if _target_active_models_filename(config) != _comparison_active_models_filename(config) else "production"
+
+
+def _sync_active_models_selection(
+    registry_path: str,
+    source_file: str,
+    target_file: str,
+    config: dict,
+    tasks: list[str],
+) -> dict:
+    registry_config = _registry_storage_config(config)
+    source = load_active_models(registry_path, active_models_filename=source_file)
+    target_path = _registry_file_path(registry_path, target_file)
+    target_exists = load_json_document(target_path, default=None, config=registry_config) is not None
+
+    sync_tasks = ["categorization", "trend"] if not target_exists else tasks
+    kwargs = {
+        "registry_path": registry_path,
+        "active_models_filename": target_file,
+    }
+    if "categorization" in sync_tasks and source.get("categorization"):
+        kwargs["active_categorization_registry_id"] = source["categorization"]["registry_id"]
+    if "trend" in sync_tasks and source.get("trend"):
+        kwargs["active_trend_registry_id"] = source["trend"]["registry_id"]
+    return set_active_models(**kwargs)
+
+
+def _current_active_registry_entry(
+    registry_path: str,
+    task_type: str,
+    config: dict,
+    active_models_filename: str,
+) -> dict | None:
+    active = load_active_models(registry_path, active_models_filename=active_models_filename).get(task_type)
     if not active:
         return None
     registry_file = _registry_file_path(registry_path, "registry.json")
@@ -187,32 +231,77 @@ def _candidate_is_better(task_type: str, candidate: dict, current_active: dict |
 def compare_and_maybe_activate(config: dict, run_id: str) -> dict:
     registry_path = config.get("registry_path", "s3://mlflow/registry")
     task_type = "categorization" if config["model_type"] == "DISTILBERT_CATEGORIZATION" else "trend"
+    comparison_file = _comparison_active_models_filename(config)
+    target_file = _target_active_models_filename(config)
+    promotion_channel = _promotion_channel(config)
 
     candidate = _latest_registry_entry_for_run(registry_path, run_id, config)
     if candidate is None:
         raise RuntimeError(f"Could not locate registry entry for run {run_id}")
 
-    active_entry = _current_active_registry_entry(registry_path, task_type, config)
+    active_entry = _current_active_registry_entry(
+        registry_path,
+        task_type,
+        config,
+        active_models_filename=comparison_file,
+    )
     promoted = _candidate_is_better(task_type, candidate, active_entry)
 
     if promoted:
+        if target_file != comparison_file:
+            _sync_active_models_selection(
+                registry_path,
+                comparison_file,
+                target_file,
+                config,
+                tasks=[task_type],
+            )
         if task_type == "categorization":
             updated = set_active_models(
                 registry_path=registry_path,
                 active_categorization_registry_id=candidate["registry_id"],
+                active_models_filename=target_file,
             )
         else:
             updated = set_active_models(
                 registry_path=registry_path,
                 active_trend_registry_id=candidate["registry_id"],
+                active_models_filename=target_file,
             )
-        updated = materialize_active_serving_artifacts(registry_path, config=config)
+        updated = materialize_active_serving_artifacts(
+            registry_path,
+            config=config,
+            active_models_filename=target_file,
+        )
         print(
             f"[PROMOTE] Promoted {task_type} model "
-            f"{candidate['model_id']} ({candidate['registry_id']})"
+            f"{candidate['model_id']} ({candidate['registry_id']}) to {promotion_channel}"
         )
-        return {"promoted": True, "task_type": task_type, "active_models": updated}
+        return {
+            "promoted": True,
+            "task_type": task_type,
+            "promotion_channel": promotion_channel,
+            "comparison_active_models_file": comparison_file,
+            "target_active_models_file": target_file,
+            "requires_rollout": promotion_channel == "canary",
+            "active_models": updated,
+        }
 
+    if target_file != comparison_file:
+        updated = _sync_active_models_selection(
+            registry_path,
+            comparison_file,
+            target_file,
+            config,
+            tasks=[task_type],
+        )
+        updated = materialize_active_serving_artifacts(
+            registry_path,
+            config=config,
+            active_models_filename=target_file,
+        )
+    else:
+        updated = None
     print(
         f"[PROMOTE] Kept existing {task_type} active model "
         f"{active_entry.get('model_id') if active_entry else None}; "
@@ -221,8 +310,13 @@ def compare_and_maybe_activate(config: dict, run_id: str) -> dict:
     return {
         "promoted": False,
         "task_type": task_type,
+        "promotion_channel": promotion_channel,
+        "comparison_active_models_file": comparison_file,
+        "target_active_models_file": target_file,
+        "requires_rollout": False,
         "candidate_registry_id": candidate.get("registry_id"),
         "active_registry_id": active_entry.get("registry_id") if active_entry else None,
+        "active_models": updated,
     }
 
 
@@ -1162,6 +1256,11 @@ def run_retraining_pipeline(config: dict, force: bool = False):
     # Step 5: Compare against current active model and optionally promote
     print(f"\n--- Step 5: Comparative promotion analysis ---")
     promotion_result = compare_and_maybe_activate(config, run_id)
+    if promotion_result.get("promoted") and promotion_result.get("promotion_channel") == "canary":
+        print(
+            "[PROMOTE] Candidate is now staged in canary configuration. "
+            "Run the serving canary rollout stages before promoting to production."
+        )
 
     # Step 6: Update last retrain date
     config["last_retrain_date"] = datetime.utcnow().isoformat()

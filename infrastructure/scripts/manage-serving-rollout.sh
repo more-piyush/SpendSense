@@ -175,6 +175,7 @@ stage_canary() {
   esac
 
   apply_manifests
+  kubectl rollout restart deployment/serving-canary -n "${NS}"
   kubectl scale deployment/serving-baseline -n "${NS}" --replicas="${prod_replicas}"
   kubectl scale deployment/serving-canary -n "${NS}" --replicas="${canary_replicas}"
   wait_rollouts
