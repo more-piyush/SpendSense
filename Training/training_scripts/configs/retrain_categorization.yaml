@@ -2,13 +2,20 @@
 # Retraining configuration for DistilBERT categorization (Phase 2)
 
 model_type: DISTILBERT_CATEGORIZATION
+task_type: categorization
+model_id: cat_distilbert_retrain
+model_family: distilbert
+training_mode: retraining
+initial_status: CANDIDATE
 
 # Feedback collection
 feedback_source: file
 feedback_path: s3://production-logs/serving/feedback/categorization/
 
 # Trigger settings
-schedule: weekly
+schedule_days: 4
+lookback_days: 4
+feedback_trigger_enabled: false
 override_rate_threshold: 0.15
 last_retrain_date: null
 
@@ -20,8 +27,19 @@ epochs: 3
 freeze_layers: 3               # Freeze layers 0-3; layers 4-5 + head trainable
 
 # Data mixing
-production_mix_ratio: 0.5      # 50% production + 50% external
 external_data_path: /data/categorization_training.parquet
+retraining_output_root: s3://retraining-data
+dynamic_mix_tiers:
+  - min_user_rows: 0
+    production_share: 0.10
+  - min_user_rows: 25
+    production_share: 0.20
+  - min_user_rows: 50
+    production_share: 0.30
+  - min_user_rows: 100
+    production_share: 0.40
+  - min_user_rows: 200
+    production_share: 0.50
 
 # Drift detection
 reference_features_path: /data/reference_features.parquet

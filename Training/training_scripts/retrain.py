@@ -26,6 +26,7 @@ import os
 import json
 import argparse
 import subprocess
+import math
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -40,7 +41,20 @@ try:
 except ImportError:
     mlflow = None
 
-from utils import load_parquet
+from export_serving_artifacts import materialize_active_serving_artifacts
+from utils import (
+    load_parquet,
+    load_active_models,
+    set_active_models,
+    save_json_document,
+    _registry_file_path,
+    _registry_storage_config,
+    _load_registry_entries,
+    _resolve_registry_entry,
+    _categorization_score,
+    _trend_score,
+    get_s3_storage_options,
+)
 
 
 # ============================================================
@@ -53,6 +67,182 @@ SAMPLE_WEIGHTS = {
     "accepted": 0.3,         # Weak labels — user did not change prediction
     "external": 0.5,         # External CE Survey data
 }
+
+TREND_FEATURE_COLUMNS = [
+    "current_spend", "rolling_mean_1m", "rolling_mean_3m", "rolling_mean_6m",
+    "rolling_std_3m", "rolling_std_6m", "deviation_ratio", "share_of_wallet",
+    "hist_share_of_wallet", "txn_count", "hist_txn_count_mean", "avg_txn_size",
+    "hist_avg_txn_size", "days_since_last_txn", "month_of_year",
+    "spending_velocity", "weekend_txn_ratio", "total_monthly_spend",
+    "elevated_cat_count", "budget_utilization",
+]
+TREND_TARGET_COLUMN = "next_month_spend"
+
+DEFAULT_DYNAMIC_MIX_TIERS = [
+    {"min_user_rows": 0, "production_share": 0.10},
+    {"min_user_rows": 25, "production_share": 0.20},
+    {"min_user_rows": 50, "production_share": 0.30},
+    {"min_user_rows": 100, "production_share": 0.40},
+    {"min_user_rows": 200, "production_share": 0.50},
+]
+
+
+def _dynamic_mix_tiers(config: dict) -> list[dict]:
+    tiers = config.get("dynamic_mix_tiers") or DEFAULT_DYNAMIC_MIX_TIERS
+    return sorted(tiers, key=lambda item: int(item.get("min_user_rows", 0)))
+
+
+def determine_production_share(config: dict, user_rows: int) -> float:
+    selected = DEFAULT_DYNAMIC_MIX_TIERS[0]["production_share"]
+    for tier in _dynamic_mix_tiers(config):
+        if user_rows >= int(tier.get("min_user_rows", 0)):
+            selected = float(tier.get("production_share", selected))
+    return min(max(selected, 0.10), 0.50)
+
+
+def _build_split_column(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    if "timestamp" in df.columns:
+        df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True, errors="coerce")
+        if df["timestamp"].notna().any():
+            df = df.sort_values("timestamp", kind="stable").reset_index(drop=True)
+        else:
+            df = df.sample(frac=1, random_state=42).reset_index(drop=True)
+    else:
+        df = df.sample(frac=1, random_state=42).reset_index(drop=True)
+
+    n = len(df)
+    train_end = max(1, int(n * 0.8))
+    val_end = max(train_end + 1, int(n * 0.9))
+    val_end = min(val_end, n)
+
+    df["split"] = "test"
+    df.loc[: train_end - 1, "split"] = "train"
+    if val_end > train_end:
+        df.loc[train_end: val_end - 1, "split"] = "val"
+    return df
+
+
+def _write_retraining_dataset(df: pd.DataFrame, config: dict, task_name: str) -> str:
+    if df.empty:
+        raise ValueError(f"Cannot persist empty retraining dataset for {task_name}")
+
+    version = datetime.utcnow().strftime("v=%Y-%m-%dT%H-%M-%SZ")
+    output_root = config.get("retraining_output_root", "s3://retraining-data").rstrip("/")
+    dataset_uri = f"{output_root}/{task_name}/{version}/combined.parquet"
+    latest_uri = f"{output_root}/{task_name}/latest.json"
+
+    if not dataset_uri.startswith("s3://"):
+        out_path = Path(dataset_uri)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        df.to_parquet(out_path, index=False)
+    else:
+        storage_options = get_s3_storage_options(config.get("s3", {}))
+        df.to_parquet(dataset_uri, index=False, storage_options=storage_options)
+
+    payload = {
+        "version": version,
+        "path": dataset_uri,
+        "rows": int(len(df)),
+        "built_at": datetime.utcnow().isoformat(),
+        "task": task_name,
+        "source_mix": df["data_source"].value_counts().to_dict() if "data_source" in df.columns else {},
+        "split_counts": df["split"].value_counts().to_dict() if "split" in df.columns else {},
+    }
+    save_json_document(latest_uri, payload, config=_registry_storage_config(config))
+    print(f"[RETRAIN-DATA] Wrote {task_name} dataset to {dataset_uri}")
+    return dataset_uri
+
+
+def _latest_registry_entry_for_run(registry_path: str, run_id: str, config: dict) -> dict | None:
+    registry_file = _registry_file_path(registry_path, "registry.json")
+    entries = _load_registry_entries(registry_file, config=_registry_storage_config(config))
+    for entry in reversed(entries):
+        if entry.get("mlflow_run_id") == run_id:
+            return entry
+    return None
+
+
+def _current_active_registry_entry(registry_path: str, task_type: str, config: dict) -> dict | None:
+    active = load_active_models(registry_path).get(task_type)
+    if not active:
+        return None
+    registry_file = _registry_file_path(registry_path, "registry.json")
+    entries = _load_registry_entries(registry_file, config=_registry_storage_config(config))
+    return _resolve_registry_entry(
+        entries,
+        registry_id=active.get("registry_id"),
+        model_id=active.get("model_id"),
+    )
+
+
+def _candidate_is_better(task_type: str, candidate: dict, current_active: dict | None) -> bool:
+    if current_active is None:
+        return True
+    if task_type == "categorization":
+        return _categorization_score(candidate) > _categorization_score(current_active)
+    return _trend_score(candidate) > _trend_score(current_active)
+
+
+def compare_and_maybe_activate(config: dict, run_id: str) -> dict:
+    registry_path = config.get("registry_path", "s3://mlflow/registry")
+    task_type = "categorization" if config["model_type"] == "DISTILBERT_CATEGORIZATION" else "trend"
+
+    candidate = _latest_registry_entry_for_run(registry_path, run_id, config)
+    if candidate is None:
+        raise RuntimeError(f"Could not locate registry entry for run {run_id}")
+
+    active_entry = _current_active_registry_entry(registry_path, task_type, config)
+    promoted = _candidate_is_better(task_type, candidate, active_entry)
+
+    if promoted:
+        if task_type == "categorization":
+            updated = set_active_models(
+                registry_path=registry_path,
+                active_categorization_registry_id=candidate["registry_id"],
+            )
+        else:
+            updated = set_active_models(
+                registry_path=registry_path,
+                active_trend_registry_id=candidate["registry_id"],
+            )
+        updated = materialize_active_serving_artifacts(registry_path, config=config)
+        print(
+            f"[PROMOTE] Promoted {task_type} model "
+            f"{candidate['model_id']} ({candidate['registry_id']})"
+        )
+        return {"promoted": True, "task_type": task_type, "active_models": updated}
+
+    print(
+        f"[PROMOTE] Kept existing {task_type} active model "
+        f"{active_entry.get('model_id') if active_entry else None}; "
+        f"candidate {candidate['model_id']} did not beat current metrics."
+    )
+    return {
+        "promoted": False,
+        "task_type": task_type,
+        "candidate_registry_id": candidate.get("registry_id"),
+        "active_registry_id": active_entry.get("registry_id") if active_entry else None,
+    }
+
+
+def load_retrain_state(config: dict) -> dict:
+    state_path = config.get("state_file")
+    if not state_path or not os.path.exists(state_path):
+        return {}
+    try:
+        with open(state_path, "r") as f:
+            return json.load(f)
+    except Exception as exc:
+        print(f"[WARN] Could not read retrain state from {state_path}: {exc}")
+        return {}
+
+
+def save_retrain_state(config: dict, payload: dict) -> None:
+    state_path = config.get("state_file", "/data/retrain_state.json")
+    os.makedirs(os.path.dirname(state_path), exist_ok=True)
+    with open(state_path, "w") as f:
+        json.dump(payload, f, indent=2, default=str)
 
 
 def collect_categorization_feedback(config: dict) -> pd.DataFrame:
@@ -163,8 +353,17 @@ def _collect_feedback_from_file(config: dict, model_type: str) -> pd.DataFrame:
 
     if path.startswith("s3://"):
         records = _load_feedback_records_from_s3(path, config, model_type)
-        print(f"[FEEDBACK] Loaded {len(records)} {model_type} feedback records from {path}")
-        return pd.DataFrame(records)
+        df = pd.DataFrame(records)
+        if df.empty:
+            print(f"[FEEDBACK] Loaded 0 {model_type} feedback records from {path}")
+            return df
+        if "created_at" in df.columns:
+            df["created_at"] = pd.to_datetime(df["created_at"], utc=True, errors="coerce")
+            cutoff = _feedback_cutoff_timestamp(config)
+            if cutoff is not None:
+                df = df[df["created_at"] >= cutoff].reset_index(drop=True)
+        print(f"[FEEDBACK] Loaded {len(df)} {model_type} feedback records from {path}")
+        return df
 
     if not os.path.exists(path):
         print(f"[FEEDBACK] No feedback file found at {path}")
@@ -177,6 +376,15 @@ def _collect_feedback_from_file(config: dict, model_type: str) -> pd.DataFrame:
 
     print(f"[FEEDBACK] Loaded {len(df)} {model_type} feedback records from {path}")
     return df
+
+
+def _feedback_cutoff_timestamp(config: dict) -> pd.Timestamp | None:
+    if config.get("last_retrain_date"):
+        return pd.to_datetime(config["last_retrain_date"], utc=True, errors="coerce")
+    lookback_days = config.get("lookback_days")
+    if lookback_days is None:
+        return None
+    return pd.Timestamp.utcnow() - pd.Timedelta(days=int(lookback_days))
 
 
 def _parse_s3_uri(uri: str) -> tuple[str, str]:
@@ -240,6 +448,8 @@ def _normalize_feedback_event(record: dict, model_type: str) -> dict | None:
             "transaction_id": payload.get("transaction_id"),
             "description": metadata.get("description", ""),
             "amount": metadata.get("amount", 0),
+            "currency": metadata.get("currency"),
+            "country": metadata.get("country"),
             "predicted_category": _extract_primary_category(predicted_value),
             "actual_category": _extract_primary_category(final_value)
             or _extract_primary_category(predicted_value),
@@ -253,9 +463,11 @@ def _normalize_feedback_event(record: dict, model_type: str) -> dict | None:
         "category_name": metadata.get("category") or final_value.get("category") or predicted_value.get("category"),
         "anomaly_score": predicted_value.get("ensemble_score"),
         "predicted_spend": predicted_value.get("predicted_next_month_spend"),
-        "actual_spend": final_value.get("actual_spend"),
+        "actual_spend": final_value.get("actual_next_month_spend") or final_value.get("actual_spend"),
         "feedback_type": _feedback_action_to_type(action, model_type),
         "created_at": payload.get("timestamp") or record.get("recorded_at"),
+        "period": payload.get("period") or payload.get("timestamp"),
+        "features": payload.get("features") or {},
     }
 
 
@@ -298,20 +510,21 @@ def check_categorization_triggers(config: dict, feedback: pd.DataFrame) -> dict:
     result = {"should_retrain": False, "reasons": []}
 
     # Check schedule
-    schedule = config.get("schedule", "weekly")
-    if schedule == "weekly":
-        last_retrain = config.get("last_retrain_date")
-        if last_retrain:
-            days_since = (datetime.utcnow() - datetime.fromisoformat(last_retrain)).days
-            if days_since >= 7:
-                result["should_retrain"] = True
-                result["reasons"].append(f"Scheduled: {days_since} days since last retrain")
-        else:
+    schedule_days = int(config.get("schedule_days", 7))
+    last_retrain = config.get("last_retrain_date")
+    if last_retrain:
+        days_since = (datetime.utcnow() - datetime.fromisoformat(last_retrain)).days
+        if days_since >= schedule_days:
             result["should_retrain"] = True
-            result["reasons"].append("No previous retraining recorded")
+            result["reasons"].append(
+                f"Scheduled: {days_since} days since last retrain (target={schedule_days})"
+            )
+    else:
+        result["should_retrain"] = True
+        result["reasons"].append("No previous retraining recorded")
 
     # Check override rate threshold
-    if not feedback.empty and "feedback_type" in feedback.columns:
+    if config.get("feedback_trigger_enabled", True) and not feedback.empty and "feedback_type" in feedback.columns:
         overrides = (feedback["feedback_type"] == "override").sum()
         total = len(feedback)
         override_rate = overrides / max(total, 1)
@@ -338,25 +551,27 @@ def check_trend_triggers(config: dict, feedback: pd.DataFrame) -> dict:
     result = {"should_retrain": False, "reasons": []}
 
     # Check schedule
-    schedule = config.get("schedule", "monthly")
-    if schedule == "monthly":
-        last_retrain = config.get("last_retrain_date")
-        if last_retrain:
-            days_since = (datetime.utcnow() - datetime.fromisoformat(last_retrain)).days
-            if days_since >= 28:
-                result["should_retrain"] = True
-                result["reasons"].append(f"Scheduled: {days_since} days since last retrain")
-        else:
+    schedule_days = int(config.get("schedule_days", 28))
+    last_retrain = config.get("last_retrain_date")
+    if last_retrain:
+        days_since = (datetime.utcnow() - datetime.fromisoformat(last_retrain)).days
+        if days_since >= schedule_days:
             result["should_retrain"] = True
-            result["reasons"].append("No previous retraining recorded")
+            result["reasons"].append(
+                f"Scheduled: {days_since} days since last retrain (target={schedule_days})"
+            )
+    else:
+        result["should_retrain"] = True
+        result["reasons"].append("No previous retraining recorded")
 
     # Check feedback count threshold
-    min_feedback = config.get("min_feedback_signals", 10)
-    if len(feedback) >= min_feedback:
-        result["should_retrain"] = True
-        result["reasons"].append(
-            f"{len(feedback)} feedback signals >= threshold {min_feedback}"
-        )
+    if config.get("feedback_trigger_enabled", True):
+        min_feedback = config.get("min_feedback_signals", 10)
+        if len(feedback) >= min_feedback:
+            result["should_retrain"] = True
+            result["reasons"].append(
+                f"{len(feedback)} feedback signals >= threshold {min_feedback}"
+            )
 
     print(f"[TRIGGER] Trend: retrain={result['should_retrain']}, "
           f"reasons={result['reasons']}")
@@ -369,7 +584,7 @@ def check_trend_triggers(config: dict, feedback: pd.DataFrame) -> dict:
 def prepare_categorization_data(
     feedback: pd.DataFrame,
     config: dict,
-) -> pd.DataFrame:
+) -> tuple[pd.DataFrame, dict]:
     """Mix production feedback with external data for categorization retraining.
 
     Documentation spec:
@@ -378,16 +593,24 @@ def prepare_categorization_data(
       - Preserves general patterns from external data
     """
     external_path = config.get("external_data_path", "/data/categorization_training.parquet")
-    mix_ratio = config.get("production_mix_ratio", 0.5)
-
-    # Load external data
     external = load_parquet(external_path, config)
+    if "categories" in external.columns:
+        external["categories"] = external["categories"].apply(
+            lambda value: json.dumps(value) if isinstance(value, list) else value
+        )
+    if "timestamp" not in external.columns:
+        external["timestamp"] = pd.Timestamp("2020-01-01", tz="UTC")
     external["sample_weight"] = SAMPLE_WEIGHTS["external"]
     external["data_source"] = "external"
 
     if feedback.empty:
-        print("[DATA MIX] No production feedback, using external data only")
-        return external
+        print("[DATA MIX] No production feedback, skipping categorization retraining dataset build")
+        return pd.DataFrame(), {
+            "production_share": 0.0,
+            "external_share": 1.0,
+            "production_rows": 0,
+            "external_rows": len(external),
+        }
 
     # Prepare production feedback
     prod_records = []
@@ -402,45 +625,64 @@ def prepare_categorization_data(
             # User accepted prediction — weak label
             categories = [row.get("predicted_category", row.get("actual_category"))]
             weight = SAMPLE_WEIGHTS["accepted"]
+        categories = [category for category in categories if category]
+        if not categories:
+            continue
 
-        prod_records.append({
-            "description": row.get("description", ""),
-            "categories": json.dumps(categories),
-            "amount": row.get("amount", 0),
-            "currency": "USD",
-            "country": "US",
-            "sample_weight": weight,
-            "data_source": "production",
-        })
+        prod_records.append(
+            {
+                "description": row.get("description", ""),
+                "categories": json.dumps(categories),
+                "amount": row.get("amount", 0),
+                "currency": row.get("currency") or "USD",
+                "country": row.get("country") or "US",
+                "sample_weight": weight,
+                "data_source": "production",
+                "timestamp": row.get("created_at"),
+            }
+        )
 
     prod_df = pd.DataFrame(prod_records)
+    prod_df["timestamp"] = pd.to_datetime(prod_df["timestamp"], utc=True, errors="coerce")
 
-    # Mix: target 50/50 ratio
     n_prod = len(prod_df)
-    n_external = int(n_prod * (1 - mix_ratio) / mix_ratio)
+    production_share = determine_production_share(config, n_prod)
+    n_external = math.ceil(n_prod * (1 - production_share) / production_share)
     n_external = min(n_external, len(external))
 
     external_sample = external.sample(n=n_external, random_state=42)
     external_sample["data_source"] = "external"
 
-    combined = pd.concat([prod_df, external_sample], ignore_index=True)
-    combined = combined.sample(frac=1, random_state=42).reset_index(drop=True)
-
-    # Add split column (80/10/10)
-    n = len(combined)
-    combined["split"] = "test"
-    combined.loc[:int(n * 0.8), "split"] = "train"
-    combined.loc[int(n * 0.8):int(n * 0.9), "split"] = "val"
+    required_columns = [
+        "description",
+        "categories",
+        "amount",
+        "currency",
+        "country",
+        "sample_weight",
+        "data_source",
+        "timestamp",
+    ]
+    combined = pd.concat(
+        [prod_df.reindex(columns=required_columns), external_sample.reindex(columns=required_columns)],
+        ignore_index=True,
+    )
+    combined = _build_split_column(combined)
 
     print(f"[DATA MIX] Combined: {n_prod} production + {n_external} external = {len(combined)} total")
     print(f"  Production ratio: {n_prod / len(combined):.1%}")
-    return combined
+    return combined, {
+        "production_share": production_share,
+        "external_share": 1 - production_share,
+        "production_rows": n_prod,
+        "external_rows": n_external,
+    }
 
 
 def prepare_trend_data(
     feedback: pd.DataFrame,
     config: dict,
-) -> pd.DataFrame:
+) -> tuple[pd.DataFrame, dict]:
     """Prepare trend detection retraining data incorporating feedback.
 
     For "Expected" feedback: adjust target values in training data.
@@ -449,10 +691,21 @@ def prepare_trend_data(
     """
     external_path = config.get("external_data_path", "/data/trend_training.parquet")
     external = load_parquet(external_path, config)
+    external["sample_weight"] = SAMPLE_WEIGHTS["external"]
+    external["data_source"] = "external"
+    if "timestamp" not in external.columns:
+        external["timestamp"] = pd.Timestamp("2020-01-01", tz="UTC")
+    if TREND_TARGET_COLUMN not in external.columns and "training_target" in external.columns:
+        external[TREND_TARGET_COLUMN] = external["training_target"]
 
     if feedback.empty:
-        print("[DATA MIX] No trend feedback, using external data only")
-        return external
+        print("[DATA MIX] No trend feedback, skipping trend retraining dataset build")
+        return pd.DataFrame(), {
+            "production_share": 0.0,
+            "external_share": 1.0,
+            "production_rows": 0,
+            "external_rows": len(external),
+        }
 
     # Process feedback labels
     for _, row in feedback.iterrows():
@@ -470,13 +723,80 @@ def prepare_trend_data(
 
             if mask.any():
                 actual = row.get("actual_spend", row.get("predicted_spend"))
-                if actual:
+                if pd.notna(actual):
                     external.loc[mask, "next_month_spend"] = (
                         external.loc[mask, "next_month_spend"] * 0.7 + float(actual) * 0.3
                     )
 
-    print(f"[DATA MIX] Trend data: {len(external)} rows with {len(feedback)} feedback adjustments")
-    return external
+    prod_records = []
+    for _, row in feedback.iterrows():
+        feature_payload = row.get("features") or {}
+        if not feature_payload:
+            continue
+
+        actual_spend = row.get("actual_spend")
+        predicted_spend = row.get("predicted_spend")
+        feedback_type = row.get("feedback_type")
+        if feedback_type == "expected":
+            target_value = predicted_spend
+        else:
+            target_value = actual_spend if pd.notna(actual_spend) else predicted_spend
+        if pd.isna(target_value):
+            continue
+
+        record = {
+            "timestamp": row.get("created_at"),
+            "period": row.get("period"),
+            "category": row.get("category_name"),
+            TREND_TARGET_COLUMN: target_value,
+            "sample_weight": {
+                "expected": SAMPLE_WEIGHTS["accepted"],
+                "helpful": SAMPLE_WEIGHTS["user_override"],
+                "not_useful": SAMPLE_WEIGHTS["user_override"],
+            }.get(feedback_type, SAMPLE_WEIGHTS["accepted"]),
+            "data_source": "production",
+        }
+        for feature_name in TREND_FEATURE_COLUMNS:
+            record[feature_name] = feature_payload.get(feature_name)
+        prod_records.append(record)
+
+    prod_df = pd.DataFrame(prod_records)
+    if prod_df.empty:
+        print("[DATA MIX] Trend feedback did not contain feature payloads, skipping retraining dataset build")
+        return pd.DataFrame(), {
+            "production_share": 0.0,
+            "external_share": 1.0,
+            "production_rows": 0,
+            "external_rows": len(external),
+        }
+
+    prod_df["timestamp"] = pd.to_datetime(prod_df["timestamp"], utc=True, errors="coerce")
+
+    production_share = determine_production_share(config, len(prod_df))
+    n_external = math.ceil(len(prod_df) * (1 - production_share) / production_share)
+    n_external = min(n_external, len(external))
+    external_sample = external.sample(n=n_external, random_state=42)
+
+    required_columns = TREND_FEATURE_COLUMNS + [
+        TREND_TARGET_COLUMN,
+        "period",
+        "category",
+        "sample_weight",
+        "data_source",
+        "timestamp",
+    ]
+    combined = pd.concat(
+        [prod_df.reindex(columns=required_columns), external_sample.reindex(columns=required_columns)],
+        ignore_index=True,
+    )
+    combined = _build_split_column(combined)
+    print(f"[DATA MIX] Trend data: {len(prod_df)} production + {n_external} external = {len(combined)} rows")
+    return combined, {
+        "production_share": production_share,
+        "external_share": 1 - production_share,
+        "production_rows": len(prod_df),
+        "external_rows": n_external,
+    }
 
 
 # ============================================================
@@ -492,13 +812,20 @@ def retrain_categorization(config: dict, training_data: pd.DataFrame) -> str:
       - Sample weighting: override=1.0, accepted=0.3, external=0.5
     """
     # Save mixed training data to temp location
-    data_path = config.get("retrain_data_path", "/tmp/retrain_categorization.parquet")
-    training_data.to_parquet(data_path, index=False)
+    data_path = config.get("retrain_data_path")
+    if not data_path:
+        data_path = "/tmp/retrain_categorization.parquet"
+        training_data.to_parquet(data_path, index=False)
 
     # Build Phase 2 config
     retrain_config = {
         "run_name": f"retrain_categorization_{datetime.utcnow().strftime('%Y%m%d_%H%M')}",
         "model_type": "distilbert",
+        "task_type": config.get("task_type", "categorization"),
+        "model_id": config.get("model_id", "cat_distilbert_retrain"),
+        "model_family": config.get("model_family", "distilbert"),
+        "training_mode": config.get("training_mode", "retraining"),
+        "initial_status": config.get("initial_status", "CANDIDATE"),
         "pretrained_model": config.get("base_model", "distilbert-base-uncased"),
         "max_length": 64,
         "learning_rate": config.get("phase2_learning_rate", 5e-6),
@@ -513,6 +840,10 @@ def retrain_categorization(config: dict, training_data: pd.DataFrame) -> str:
         "data_path": data_path,
         "mlflow_tracking_uri": config.get("mlflow_tracking_uri", "http://localhost:5000"),
         "experiment_name": config.get("experiment_name", "categorization_retrain"),
+        "direct_artifact_experiment_name": config.get("direct_artifact_experiment_name"),
+        "artifact_location": config.get("artifact_location"),
+        "registry_path": config.get("registry_path", "s3://mlflow/registry"),
+        "s3": config.get("s3", {}),
     }
 
     # Load previous model weights if specified
@@ -551,12 +882,19 @@ def retrain_trend(config: dict, training_data: pd.DataFrame) -> str:
 
     Per-user fine-tuning: 50-100 additional trees, learning_rate=0.01.
     """
-    data_path = config.get("retrain_data_path", "/tmp/retrain_trend.parquet")
-    training_data.to_parquet(data_path, index=False)
+    data_path = config.get("retrain_data_path")
+    if not data_path:
+        data_path = "/tmp/retrain_trend.parquet"
+        training_data.to_parquet(data_path, index=False)
 
     retrain_config = {
         "run_name": f"retrain_trend_{datetime.utcnow().strftime('%Y%m%d_%H%M')}",
         "model_type": "xgboost",
+        "task_type": config.get("task_type", "trend"),
+        "model_id": config.get("model_id", "trend_xgb_retrain"),
+        "model_family": config.get("model_family", "xgboost"),
+        "training_mode": config.get("training_mode", "retraining"),
+        "initial_status": config.get("initial_status", "CANDIDATE"),
         "objective": "reg:squarederror",
         "n_estimators": config.get("n_estimators", 100),
         "max_depth": config.get("max_depth", 6),
@@ -576,6 +914,10 @@ def retrain_trend(config: dict, training_data: pd.DataFrame) -> str:
         "data_path": data_path,
         "mlflow_tracking_uri": config.get("mlflow_tracking_uri", "http://localhost:5000"),
         "experiment_name": config.get("experiment_name", "trend_retrain"),
+        "direct_artifact_experiment_name": config.get("direct_artifact_experiment_name"),
+        "artifact_location": config.get("artifact_location"),
+        "registry_path": config.get("registry_path", "s3://mlflow/registry"),
+        "s3": config.get("s3", {}),
     }
 
     config_path = "/tmp/retrain_trend_config.yaml"
@@ -793,9 +1135,18 @@ def run_retraining_pipeline(config: dict, force: bool = False):
     # Step 3: Prepare training data
     print(f"\n--- Step 3: Preparing training data ---")
     if model_type == "DISTILBERT_CATEGORIZATION":
-        training_data = prepare_categorization_data(feedback, config)
+        training_data, mix_stats = prepare_categorization_data(feedback, config)
+        task_name = "categorization"
     else:
-        training_data = prepare_trend_data(feedback, config)
+        training_data, mix_stats = prepare_trend_data(feedback, config)
+        task_name = "trend"
+
+    if training_data.empty:
+        print("\n[SKIP] Retraining dataset is empty after mixing. Active models unchanged.")
+        return
+
+    dataset_uri = _write_retraining_dataset(training_data, config, task_name)
+    config["retrain_data_path"] = dataset_uri
 
     # Step 4: Execute retraining
     print(f"\n--- Step 4: Retraining model ---")
@@ -804,22 +1155,31 @@ def run_retraining_pipeline(config: dict, force: bool = False):
     else:
         run_id = retrain_trend(config, training_data)
 
-    # Step 5: Promotion gating
-    print(f"\n--- Step 5: Promotion gating ---")
-    promotion_result = run_promotion_gating(config, run_id)
+    # Step 5: Compare against current active model and optionally promote
+    print(f"\n--- Step 5: Comparative promotion analysis ---")
+    promotion_result = compare_and_maybe_activate(config, run_id)
 
     # Step 6: Update last retrain date
     config["last_retrain_date"] = datetime.utcnow().isoformat()
-    state_path = config.get("state_file", "/data/retrain_state.json")
-    os.makedirs(os.path.dirname(state_path), exist_ok=True)
-    with open(state_path, "w") as f:
-        json.dump({"last_retrain_date": config["last_retrain_date"],
-                    "run_id": run_id, "model_type": model_type}, f)
+    save_retrain_state(
+        config,
+        {
+            "last_retrain_date": config["last_retrain_date"],
+            "run_id": run_id,
+            "model_type": model_type,
+            "task_name": task_name,
+            "dataset_uri": dataset_uri,
+            "mix_stats": mix_stats,
+            "promotion_result": promotion_result,
+        },
+    )
 
     print(f"\n{'=' * 70}")
     print(f"RETRAINING COMPLETE")
     print(f"  Run ID: {run_id}")
     print(f"  Triggers: {triggers['reasons']}")
+    print(f"  Retraining dataset: {dataset_uri}")
+    print(f"  Promotion result: {json.dumps(promotion_result, indent=2, default=str)}")
     print(f"{'=' * 70}")
 
 
@@ -832,6 +1192,10 @@ def main():
 
     with open(args.config, "r") as f:
         config = yaml.safe_load(f)
+
+    state = load_retrain_state(config)
+    if state.get("last_retrain_date"):
+        config["last_retrain_date"] = state["last_retrain_date"]
 
     run_retraining_pipeline(config, force=args.force)
 

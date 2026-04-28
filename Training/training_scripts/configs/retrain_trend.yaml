@@ -2,13 +2,20 @@
 # Retraining configuration for XGBoost trend detection
 
 model_type: XGBOOST_TREND
+task_type: trend
+model_id: trend_xgb_retrain
+model_family: xgboost
+training_mode: retraining
+initial_status: CANDIDATE
 
 # Feedback collection
 feedback_source: file
-feedback_path: s3://production-logs/serving/feedback/trend_detection/
+feedback_path: s3://production-logs/serving/feedback/trend/
 
 # Trigger settings
-schedule: monthly
+schedule_days: 4
+lookback_days: 4
+feedback_trigger_enabled: false
 min_feedback_signals: 10
 last_retrain_date: null
 
@@ -21,6 +28,18 @@ reg_lambda: 2.0
 
 # External data
 external_data_path: /data/trend_training.parquet
+retraining_output_root: s3://retraining-data
+dynamic_mix_tiers:
+  - min_user_rows: 0
+    production_share: 0.10
+  - min_user_rows: 25
+    production_share: 0.20
+  - min_user_rows: 50
+    production_share: 0.30
+  - min_user_rows: 100
+    production_share: 0.40
+  - min_user_rows: 200
+    production_share: 0.50
 
 # Drift detection
 reference_features_path: /data/reference_trend_features.parquet
