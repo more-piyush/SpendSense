@@ -36,7 +36,7 @@ kubectl exec -i -n "${NS}" "${pod_name}" -- \
   env ROLE_NAME="${ROLE_NAME}" ROLE_PASSWORD="${ROLE_PASSWORD}" bash -lc '
     set -euo pipefail
     cat <<'"'"'SQL'"'"' | su postgres -c "psql -v ON_ERROR_STOP=1 -U \"$ROLE_NAME\" -d postgres -v role_name=\"$ROLE_NAME\" -v role_password=\"$ROLE_PASSWORD\" -f -"
-SELECT format('"'"'"'"'"'"'"'"'ALTER ROLE %I WITH PASSWORD %L'"'"'"'"'"'"'"'"', :'"'"'"'"'"'"'"'"'role_name'"'"'"'"'"'"'"'"', :'"'"'"'"'"'"'"'"'role_password'"'"'"'"'"'"'"'"') \gexec
+SELECT format('ALTER ROLE %I WITH PASSWORD %L', :'role_name', :'role_password') \gexec
 SQL
   '
 
