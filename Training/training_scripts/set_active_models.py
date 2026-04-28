@@ -39,10 +39,18 @@ def main():
         action="store_true",
         help="Pick the current best categorization and trend models from registry metrics",
     )
+    parser.add_argument(
+        "--active-models-file",
+        default="active_models.json",
+        help="Registry-side active model document to update",
+    )
     args = parser.parse_args()
 
     if args.auto_select:
-        updated = update_active_model_selection(args.registry_path)
+        updated = update_active_model_selection(
+            args.registry_path,
+            active_models_filename=args.active_models_file,
+        )
     else:
         updated = set_active_models(
             registry_path=args.registry_path,
@@ -50,10 +58,14 @@ def main():
             active_trend_model=args.active_trend_model,
             active_categorization_registry_id=args.active_categorization_registry_id,
             active_trend_registry_id=args.active_trend_registry_id,
+            active_models_filename=args.active_models_file,
         )
-    updated = materialize_active_serving_artifacts(args.registry_path)
+    updated = materialize_active_serving_artifacts(
+        args.registry_path,
+        active_models_filename=args.active_models_file,
+    )
     print(json.dumps(updated, indent=2))
-    print(json.dumps(load_active_models(args.registry_path), indent=2))
+    print(json.dumps(load_active_models(args.registry_path, active_models_filename=args.active_models_file), indent=2))
 
 
 if __name__ == "__main__":

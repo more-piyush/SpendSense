@@ -486,29 +486,44 @@ def _next_model_version(entries: list, model_id: str) -> str:
     return f"{major}.{minor}.0"
 
 
-def load_active_models(registry_path: str) -> dict:
+def load_active_models(registry_path: str, active_models_filename: str = "active_models.json") -> dict:
     """Load the active-model selection JSON from the registry directory."""
-    active_models_file = _registry_file_path(registry_path, "active_models.json")
+    active_models_file = _registry_file_path(registry_path, active_models_filename)
     registry_file = _registry_file_path(registry_path, "registry.json")
     registry_config = _registry_storage_config()
     entries = _load_registry_entries(registry_file, config=registry_config)
     return _ensure_active_models_file(active_models_file, entries=entries, config=registry_config)
 
 
-def get_active_model_record(registry_path: str, task_type: str, config: dict = None):
+def get_active_model_record(
+    registry_path: str,
+    task_type: str,
+    config: dict = None,
+    active_models_filename: str = "active_models.json",
+):
     """Return the authoritative active model record for a task."""
     registry_path = registry_path or "s3://mlflow/registry"
     registry_file = _registry_file_path(registry_path, "registry.json")
-    active_models_file = _registry_file_path(registry_path, "active_models.json")
+    active_models_file = _registry_file_path(registry_path, active_models_filename)
     registry_config = _registry_storage_config(config)
     entries = _load_registry_entries(registry_file, config=registry_config)
     payload = _ensure_active_models_file(active_models_file, entries=entries, config=registry_config)
     return payload.get(task_type)
 
 
-def get_active_model_artifact_path(registry_path: str, task_type: str, config: dict = None):
+def get_active_model_artifact_path(
+    registry_path: str,
+    task_type: str,
+    config: dict = None,
+    active_models_filename: str = "active_models.json",
+):
     """Convenience helper to fetch the current active model artifact path for a task."""
-    record = get_active_model_record(registry_path, task_type, config=config)
+    record = get_active_model_record(
+        registry_path,
+        task_type,
+        config=config,
+        active_models_filename=active_models_filename,
+    )
     if record is None:
         return None
     return record.get("artifact_path")
@@ -520,10 +535,11 @@ def set_active_models(
     active_trend_model: str = None,
     active_categorization_registry_id: str = None,
     active_trend_registry_id: str = None,
+    active_models_filename: str = "active_models.json",
 ) -> dict:
     """Update active model selections for categorization and trend tasks."""
     registry_path = registry_path or "s3://mlflow/registry"
-    active_models_file = _registry_file_path(registry_path, "active_models.json")
+    active_models_file = _registry_file_path(registry_path, active_models_filename)
     registry_file = _registry_file_path(registry_path, "registry.json")
     registry_config = _registry_storage_config()
     entries = _load_registry_entries(registry_file, config=registry_config)
@@ -667,10 +683,14 @@ def _choose_best_candidate(entries: list, task_type: str):
     return max(eligible, key=_trend_score)
 
 
-def update_active_model_selection(registry_path: str, config: dict = None) -> dict:
+def update_active_model_selection(
+    registry_path: str,
+    config: dict = None,
+    active_models_filename: str = "active_models.json",
+) -> dict:
     """Recompute active model winners from registry metrics and persist selections."""
     registry_file = _registry_file_path(registry_path, "registry.json")
-    active_models_file = _registry_file_path(registry_path, "active_models.json")
+    active_models_file = _registry_file_path(registry_path, active_models_filename)
     config = config or {}
     registry_config = _registry_storage_config(config)
 

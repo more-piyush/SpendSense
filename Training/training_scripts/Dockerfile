@@ -43,6 +43,7 @@ COPY retrain.py .
 COPY explain.py .
 COPY generate_training_data.py .
 COPY set_active_models.py .
+COPY sync_active_models.py .
 COPY export_serving_artifacts.py .
 COPY configs/ configs/
 

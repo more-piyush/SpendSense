@@ -1,36 +1,36 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: serving-baseline
+  name: serving-canary
   namespace: firefly-platform
 spec:
-  replicas: 1
+  replicas: 0
   selector:
     matchLabels:
       app.kubernetes.io/name: spendsense-serving
       app.kubernetes.io/component: api
-      app.kubernetes.io/instance: production
+      app.kubernetes.io/instance: canary
   template:
     metadata:
       labels:
         app: spendsense-serving
         app.kubernetes.io/name: spendsense-serving
         app.kubernetes.io/component: api
-        app.kubernetes.io/instance: production
-        spendsense.ai/channel: production
+        app.kubernetes.io/instance: canary
+        spendsense.ai/channel: canary
         spendsense.ai/public-route: "true"
     spec:
       containers:
-        - name: serving-baseline
+        - name: serving-canary
           image: docker.io/spendsense/serving-unified:latest
           imagePullPolicy: IfNotPresent
           env:
             - name: SERVING_ENVIRONMENT
-              value: production
+              value: canary
             - name: SERVING_SERVICE_NAME
-              value: serving-baseline
+              value: serving-canary
             - name: ACTIVE_MODELS_PATH
-              value: s3://mlflow/registry/active_models.json
+              value: s3://mlflow/registry/active_models_canary.json
             - name: S3_ENDPOINT_URL
               value: http://minio.firefly-platform.svc.cluster.local:9000
             - name: AWS_ACCESS_KEY_ID
@@ -44,11 +44,11 @@ spec:
                   name: minio-secret
                   key: MINIO_ROOT_PASSWORD
             - name: FEEDBACK_STORE_PATH
-              value: /tmp/spendsense-serving-feedback.jsonl
+              value: /tmp/spendsense-serving-feedback-canary.jsonl
             - name: PRODUCTION_LOGS_BUCKET
               value: production-logs
             - name: PRODUCTION_LOGS_PREFIX
-              value: serving
+              value: serving-canary
           ports:
             - containerPort: 8000
           readinessProbe:
@@ -65,8 +65,8 @@ spec:
             periodSeconds: 20
           resources:
             requests:
-              cpu: "500m"
-              memory: "2Gi"
+              cpu: "250m"
+              memory: "1Gi"
             limits:
               cpu: "1000m"
               memory: "4Gi"

@@ -20,6 +20,12 @@ kubectl rollout status deployment/mlflow -n "$NS" --timeout=240s
 kubectl rollout status deployment/firefly -n "$NS" --timeout=240s
 kubectl rollout status deployment/serving-baseline -n "$NS" --timeout=240s
 
+if [[ "$(kubectl get deployment/serving-canary -n "$NS" -o jsonpath='{.spec.replicas}')" != "0" ]]; then
+  kubectl rollout status deployment/serving-canary -n "$NS" --timeout=240s
+else
+  echo "[INFO] Canary deployment is scaled to 0 replicas; skipping rollout wait."
+fi
+
 echo "[INFO] MinIO bootstrap logs"
 kubectl logs job/minio-bootstrap -n "$NS" || true
 echo "[INFO] PostgreSQL bootstrap logs"

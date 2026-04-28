@@ -48,6 +48,8 @@ kubectl apply -f "${K8S_DIR}/firefly/service.yaml"
 
 kubectl apply -f "${K8S_DIR}/serving/deployment.yaml"
 kubectl apply -f "${K8S_DIR}/serving/service.yaml"
+kubectl apply -f "${K8S_DIR}/serving/canary-deployment.yaml"
+kubectl apply -f "${K8S_DIR}/serving/canary-service.yaml"
 
 kubectl apply -f "${K8S_DIR}/data/configmap.yaml"
 kubectl apply -f "${K8S_DIR}/data/cronjob.yaml"

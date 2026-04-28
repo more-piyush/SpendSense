@@ -18,6 +18,8 @@ kubectl delete -f "${K8S_DIR}/data/configmap.yaml" --ignore-not-found=true
 
 kubectl delete -f "${K8S_DIR}/serving/service.yaml" --ignore-not-found=true
 kubectl delete -f "${K8S_DIR}/serving/deployment.yaml" --ignore-not-found=true
+kubectl delete -f "${K8S_DIR}/serving/canary-service.yaml" --ignore-not-found=true
+kubectl delete -f "${K8S_DIR}/serving/canary-deployment.yaml" --ignore-not-found=true
 
 kubectl delete -f "${K8S_DIR}/firefly/service.yaml" --ignore-not-found=true
 kubectl delete -f "${K8S_DIR}/firefly/deployment.yaml" --ignore-not-found=true

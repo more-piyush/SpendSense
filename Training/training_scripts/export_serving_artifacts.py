@@ -252,10 +252,14 @@ def _build_serving_artifacts(record: dict, export_root: str, client) -> dict:
     return {}
 
 
-def materialize_active_serving_artifacts(registry_path: str, config: dict | None = None) -> dict:
+def materialize_active_serving_artifacts(
+    registry_path: str,
+    config: dict | None = None,
+    active_models_filename: str = "active_models.json",
+) -> dict:
     registry_path = registry_path or "s3://mlflow/registry"
     config = _registry_storage_config(config)
-    active_models_file = _registry_file_path(registry_path, "active_models.json")
+    active_models_file = _registry_file_path(registry_path, active_models_filename)
     payload = load_json_document(active_models_file, default={}, config=config)
     client = _s3_client(config)
     export_root = os.environ.get("SERVING_ARTIFACT_ROOT", "s3://mlflow/serving-artifacts")
@@ -281,6 +285,10 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Export serving artifacts for active models")
     parser.add_argument("--registry-path", default="s3://mlflow/registry")
+    parser.add_argument("--active-models-file", default="active_models.json")
     args = parser.parse_args()
-    updated = materialize_active_serving_artifacts(args.registry_path)
+    updated = materialize_active_serving_artifacts(
+        args.registry_path,
+        active_models_filename=args.active_models_file,
+    )
     print(json.dumps(updated, indent=2))
