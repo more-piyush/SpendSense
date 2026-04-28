@@ -22,8 +22,12 @@ if [[ -z "${FIREFLY_APP_KEY}" ]]; then
   FIREFLY_APP_KEY="base64:$(openssl rand -base64 32 | tr -d '\n')"
 fi
 
-if [[ -z "${MINIO_ROOT_PASSWORD}" ]]; then
-  MINIO_ROOT_PASSWORD="$(openssl rand -base64 24 | tr -d '\n')"
+if [[ -z "${MINIO_ROOT_USER}" || -z "${MINIO_ROOT_PASSWORD}" ]]; then
+  cat >&2 <<EOF
+[ERROR] MINIO_ROOT_USER and MINIO_ROOT_PASSWORD must be set in infrastructure/config/deploy.env.
+[ERROR] Refusing to auto-generate MinIO credentials because that causes secret drift.
+EOF
+  exit 1
 fi
 
 kubectl apply -f "${REPO_ROOT}/infrastructure/k8s/namespace/namespace.yaml"
