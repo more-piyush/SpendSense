@@ -1,0 +1,166 @@
+name: Demo Retrain And Canary
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch to sync on the VM"
+        required: true
+        default: "test"
+        type: string
+      control_plane_ip:
+        description: "Public IP of the existing SpendSense VM"
+        required: true
+        type: string
+      ssh_user:
+        description: "SSH username for the VM"
+        required: true
+        default: "cc"
+        type: string
+      action:
+        description: "Demo action to run"
+        required: true
+        default: "force_retrain_categorization"
+        type: choice
+        options:
+          - force_retrain_categorization
+          - force_retrain_trend
+          - show_canary_active_models
+          - stage_5
+          - stage_10
+          - stage_25
+          - promote
+          - rollback
+          - status
+
+jobs:
+  demo:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      REMOTE_REPO_PATH: "~/SpendSense"
+      REMOTE_REPO_URL: "https://github.com/${{ github.repository }}.git"
+      CONTROL_PLANE_IP: ${{ github.event.inputs.control_plane_ip }}
+      SSH_USER: ${{ github.event.inputs.ssh_user }}
+      BRANCH_NAME: ${{ github.event.inputs.branch }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure SSH key
+        env:
+          CHAMELEON_SSH_PRIVATE_KEY: ${{ secrets.CHAMELEON_SSH_PRIVATE_KEY }}
+        run: |
+          mkdir -p "${HOME}/.ssh"
+          printf '%s\n' "${CHAMELEON_SSH_PRIVATE_KEY}" > "${HOME}/.ssh/id_ed25519"
+          chmod 600 "${HOME}/.ssh/id_ed25519"
+          printf 'Host *\n  StrictHostKeyChecking no\n  UserKnownHostsFile=/dev/null\n' > "${HOME}/.ssh/config"
+          chmod 600 "${HOME}/.ssh/config"
+
+      - name: Sync repository on VM
+        run: |
+          ssh -i "${HOME}/.ssh/id_ed25519" "${SSH_USER}@${CONTROL_PLANE_IP}" "
+            set -e
+            if [ -d ${REMOTE_REPO_PATH}/.git ]; then
+              cd ${REMOTE_REPO_PATH}
+              git fetch origin
+              git checkout ${BRANCH_NAME}
+              git pull origin ${BRANCH_NAME}
+            else
+              rm -rf ${REMOTE_REPO_PATH}
+              git clone --branch ${BRANCH_NAME} --single-branch ${REMOTE_REPO_URL} ${REMOTE_REPO_PATH}
+            fi
+          "
+
+      - name: Force retrain categorization
+        if: ${{ github.event.inputs.action == 'force_retrain_categorization' }}
+        run: |
+          ssh -i "${HOME}/.ssh/id_ed25519" "${SSH_USER}@${CONTROL_PLANE_IP}" "
+            set -e
+            cd ${REMOTE_REPO_PATH}
+            bash infrastructure/scripts/run-retraining-once.sh categorization --force
+          "
+
+      - name: Force retrain trend
+        if: ${{ github.event.inputs.action == 'force_retrain_trend' }}
+        run: |
+          ssh -i "${HOME}/.ssh/id_ed25519" "${SSH_USER}@${CONTROL_PLANE_IP}" "
+            set -e
+            cd ${REMOTE_REPO_PATH}
+            bash infrastructure/scripts/run-retraining-once.sh trend --force
+          "
+
+      - name: Show canary active models
+        if: ${{ github.event.inputs.action == 'force_retrain_categorization' || github.event.inputs.action == 'force_retrain_trend' || github.event.inputs.action == 'show_canary_active_models' }}
+        run: |
+          ssh -i "${HOME}/.ssh/id_ed25519" "${SSH_USER}@${CONTROL_PLANE_IP}" "
+            set -e
+            cd ${REMOTE_REPO_PATH}
+            bash infrastructure/scripts/print-active-models.sh active_models_canary.json
+          "
+
+      - name: Stage canary at 5 percent
+        if: ${{ github.event.inputs.action == 'stage_5' }}
+        run: |
+          ssh -i "${HOME}/.ssh/id_ed25519" "${SSH_USER}@${CONTROL_PLANE_IP}" "
+            set -e
+            cd ${REMOTE_REPO_PATH}
+            bash infrastructure/scripts/manage-serving-rollout.sh stage 5
+          "
+
+      - name: Stage canary at 10 percent
+        if: ${{ github.event.inputs.action == 'stage_10' }}
+        run: |
+          ssh -i "${HOME}/.ssh/id_ed25519" "${SSH_USER}@${CONTROL_PLANE_IP}" "
+            set -e
+            cd ${REMOTE_REPO_PATH}
+            bash infrastructure/scripts/manage-serving-rollout.sh stage 10
+          "
+
+      - name: Stage canary at 25 percent
+        if: ${{ github.event.inputs.action == 'stage_25' }}
+        run: |
+          ssh -i "${HOME}/.ssh/id_ed25519" "${SSH_USER}@${CONTROL_PLANE_IP}" "
+            set -e
+            cd ${REMOTE_REPO_PATH}
+            bash infrastructure/scripts/manage-serving-rollout.sh stage 25
+          "
+
+      - name: Promote canary to production
+        if: ${{ github.event.inputs.action == 'promote' }}
+        run: |
+          ssh -i "${HOME}/.ssh/id_ed25519" "${SSH_USER}@${CONTROL_PLANE_IP}" "
+            set -e
+            cd ${REMOTE_REPO_PATH}
+            bash infrastructure/scripts/manage-serving-rollout.sh promote
+          "
+
+      - name: Roll back canary
+        if: ${{ github.event.inputs.action == 'rollback' }}
+        run: |
+          ssh -i "${HOME}/.ssh/id_ed25519" "${SSH_USER}@${CONTROL_PLANE_IP}" "
+            set -e
+            cd ${REMOTE_REPO_PATH}
+            bash infrastructure/scripts/manage-serving-rollout.sh rollback
+          "
+
+      - name: Show rollout status
+        if: ${{ github.event.inputs.action == 'status' || startsWith(github.event.inputs.action, 'stage_') || github.event.inputs.action == 'promote' || github.event.inputs.action == 'rollback' }}
+        run: |
+          ssh -i "${HOME}/.ssh/id_ed25519" "${SSH_USER}@${CONTROL_PLANE_IP}" "
+            set -e
+            cd ${REMOTE_REPO_PATH}
+            bash infrastructure/scripts/manage-serving-rollout.sh status
+          "
+
+      - name: Publish demo URLs
+        run: |
+          {
+            echo "## Demo URLs"
+            echo
+            echo "- Production health: http://${CONTROL_PLANE_IP}:30081/health"
+            echo "- Production docs: http://${CONTROL_PLANE_IP}:30081/docs"
+            echo "- Canary health: http://${CONTROL_PLANE_IP}:30082/health"
+            echo "- Canary docs: http://${CONTROL_PLANE_IP}:30082/docs"
+          } >> "${GITHUB_STEP_SUMMARY}"

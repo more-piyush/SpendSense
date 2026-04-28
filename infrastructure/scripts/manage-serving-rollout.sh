@@ -32,6 +32,7 @@ apply_manifests() {
   kubectl apply -f "${K8S_DIR}/serving/service.yaml"
   kubectl apply -f "${K8S_DIR}/serving/canary-deployment.yaml"
   kubectl apply -f "${K8S_DIR}/serving/canary-service.yaml"
+  kubectl apply -f "${K8S_DIR}/serving/canary-public-service.yaml"
 }
 
 wait_rollouts() {
@@ -204,7 +205,7 @@ rollback_canary() {
 
 status_rollout() {
   kubectl get deployment -n "${NS}" serving-baseline serving-canary
-  kubectl get svc -n "${NS}" serving-baseline serving-canary
+  kubectl get svc -n "${NS}" serving-baseline serving-canary serving-canary-public
 }
 
 action="${1:-}"
