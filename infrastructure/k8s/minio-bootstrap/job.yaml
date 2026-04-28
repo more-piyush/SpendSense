@@ -4,7 +4,7 @@ metadata:
   name: minio-bootstrap
   namespace: firefly-platform
 spec:
-  backoffLimit: 2
+  backoffLimit: 6
   template:
     spec:
       restartPolicy: OnFailure
@@ -15,7 +15,21 @@ spec:
           args:
             - |
               set -e
-              mc alias set local http://minio.firefly-platform.svc.cluster.local:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD"
+              connected="false"
+              for attempt in $(seq 1 30); do
+                if mc alias set local http://minio.firefly-platform.svc.cluster.local:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD"; then
+                  connected="true"
+                  break
+                fi
+                echo "[INFO] Waiting for MinIO API to accept connections... attempt ${attempt}/30"
+                sleep 5
+              done
+
+              if [ "${connected}" != "true" ]; then
+                echo "[ERROR] MinIO API did not become ready in time."
+                exit 1
+              fi
+
               mc mb -p local/mlflow || true
               mc mb -p local/training-data || true
               mc mb -p local/processed-data || true

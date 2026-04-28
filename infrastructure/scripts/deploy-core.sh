@@ -54,7 +54,19 @@ kubectl rollout status deployment/mlflow -n firefly-platform --timeout=240s
 
 kubectl delete -f "${K8S_DIR}/minio-bootstrap/job.yaml" --ignore-not-found=true
 kubectl apply -f "${K8S_DIR}/minio-bootstrap/job.yaml"
-kubectl wait --for=condition=complete job/minio-bootstrap -n firefly-platform --timeout=240s
+if ! kubectl wait --for=condition=complete job/minio-bootstrap -n firefly-platform --timeout=300s; then
+  echo "[WARN] minio-bootstrap did not complete successfully."
+  kubectl describe job minio-bootstrap -n firefly-platform || true
+  kubectl logs -n firefly-platform deployment/minio || true
+  minio_bootstrap_pod="$(
+    kubectl get pods -n firefly-platform -l job-name=minio-bootstrap \
+      -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true
+  )"
+  if [[ -n "${minio_bootstrap_pod}" ]]; then
+    kubectl logs -n firefly-platform "${minio_bootstrap_pod}" || true
+  fi
+  exit 1
+fi
 
 tmp_config="$(mktemp)"
 sed "s|<FLOATING_IP>|${FLOATING_IP}|g" "${K8S_DIR}/firefly/configmap.yaml" > "$tmp_config"
