@@ -8,7 +8,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 K8S_DIR="${REPO_ROOT}/infrastructure/k8s"
 NS="firefly-platform"
 REGISTRY_PATH="${REGISTRY_PATH:-s3://mlflow/registry}"
-TRAINING_IMAGE="${TRAINING_IMAGE:-docker.io/spendsense/training:latest}"
+TRAINING_IMAGE="${TRAINING_IMAGE:-spendsense/training:latest}"
 PROD_FILE="active_models.json"
 CANARY_FILE="active_models_canary.json"
 
